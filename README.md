@@ -125,6 +125,16 @@ go run . -stage 2    # CHALLENGE onwards (reuses existing .makercycle/state/PLAN
 go run . -stage 3    # MAKE onwards
 ```
 
+### Autonomous specification loop
+
+Stages 1 (PLANNER) and 2 (CRITIC) run as a closed loop. When the CRITIC writes `SPEC_STATUS: REVISION_REQUIRED`, Stage 1 is re-run automatically: the PLANNER receives `@.makercycle/state/SPEC_REVIEW.md` and must fix `PLAN.md`, `TEST_CASES.md` and the RED tests. The loop repeats until the CRITIC approves (`SPEC_STATUS: APPROVED`) or `MC_MAX_ATTEMPTS` / `-max-attempts` rounds are used up. Each retry prints:
+
+```text
+[AVISO] CRITIC solicitou revisão. Reexecutando Etapa 1 (Tentativa 2/3)...
+```
+
+Exit code `2` only occurs when the attempts are exhausted. Tokens from every round (including one interrupted by quota) are added to the run total.
+
 ### Resuming Execution & Connecting Existing Demands
 
 You can resume interrupted runs or connect existing demands:
@@ -222,20 +232,23 @@ Configuration precedence is: **CLI Flags > Environment Variables > `.makercycle/
 ├── state/                 # transient artifacts: PLAN, TEST_CASES, DECISION, ... (git-ignored)
 └── telemetry/             # CSV metrics (header written on first use, then append-only)
     ├── runs.csv           # one row per run: attempts, tokens in/out/total, final status
-    └── events.csv         # one row per stage/agent execution: tokens, duration, attempt (joins runs.csv by RunID)
+    ├── events.csv         # one row per stage/agent execution: tokens, duration, attempt (joins runs.csv by RunID)
+    └── TELEMETRY.md       # human-readable report generated from both CSVs (do not edit)
 ```
 
 Logs contain the prompt and the full response of every agent, the complete test/linter output, the generated review/security/decision reports, durations, token counts and the final exit code.
 
+`TELEMETRY.md` is regenerated at the end of every run from `runs.csv` and `events.csv`. It starts with the KPIs (total runs, success rate, accumulated tokens overall and per stage E1 to E5, average duration) followed by the run history, newest first, in a table with the header `| Data | RunID | Status | Demanda | Stack | Tentativas | Duração | Tokens Totais | Tokens E1 PLAN | ... | Tokens E5 GATE |`. If the report cannot be generated, only a warning is printed and the run is not interrupted.
+
 ## Exit codes
 
-Stages 1 and 2 run once, in sequence. When the CRITIC answers `SPEC_STATUS: REVISION_REQUIRED` (or does not write the review), the run stops with exit code `2`; fix the plan and start again from Stage 1.
+Stages 1 and 2 run as an autonomous loop (see [Autonomous specification loop](#autonomous-specification-loop)). Exit code `2` only happens when the CRITIC still answers `SPEC_STATUS: REVISION_REQUIRED` (or does not write the review) after `MC_MAX_ATTEMPTS` rounds; fix the plan and start again from Stage 1.
 
 | Code | Meaning |
 | :--- | :--- |
 | `0` | `APPROVE_MERGE` (or a successful `-init`/`-setup`) |
 | `1` | Fatal error or circuit breaker tripped |
-| `2` | Specification blocked by the CRITIC (Stage 2) |
+| `2` | Specification blocked by the CRITIC (Stage 2) after exhausting `MC_MAX_ATTEMPTS` |
 | `3` | `AMEND_TEST` — a Stage 1 test needs fixing |
 | `4` | `ESCALATE_PLANNER` |
 | `5` | Quota or token limit reached (state saved in `RESUME.env`, resumable with `-resume`) |

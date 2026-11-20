@@ -1,6 +1,6 @@
 # Artefatos transitórios de cada execução do MakerCycle
 .makercycle/state/
-#.makercycle/telemetry/
+.makercycle/telemetry/
 .makercycle/config/project.env
 
 #pastas de configuração

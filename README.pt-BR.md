@@ -125,6 +125,16 @@ go run . -stage 2    # a partir de CHALLENGE (reaproveita .makercycle/state/PLAN
 go run . -stage 3    # a partir de MAKE
 ```
 
+### Loop autônomo de especificação
+
+As Etapas 1 (PLANNER) e 2 (CRITIC) formam um ciclo fechado. Quando o CRITIC grava `SPEC_STATUS: REVISION_REQUIRED`, a Etapa 1 é reexecutada automaticamente: o PLANNER recebe `@.makercycle/state/SPEC_REVIEW.md` e deve corrigir `PLAN.md`, `TEST_CASES.md` e os testes RED. O loop se repete até o CRITIC aprovar (`SPEC_STATUS: APPROVED`) ou esgotar `MC_MAX_ATTEMPTS` / `-max-attempts` rodadas. A cada nova rodada é exibido:
+
+```text
+[AVISO] CRITIC solicitou revisão. Reexecutando Etapa 1 (Tentativa 2/3)...
+```
+
+O código de saída `2` só ocorre ao esgotar as tentativas. Os tokens de todas as rodadas (inclusive a interrompida por cota) entram no total da execução.
+
 ### Retomada de Execução e Vinculação de Demandas
 
 Você pode retomar execuções interrompidas ou vincular demandas existentes:
@@ -222,20 +232,23 @@ A precedência de configuração segue: **Flags CLI > Variáveis de Ambiente > `
 ├── state/                 # artefatos transitórios: PLAN, TEST_CASES, DECISION, ... (ignorado)
 └── telemetry/             # métricas em CSV (cabeçalho criado no primeiro uso, depois só append)
     ├── runs.csv           # uma linha por execução: tentativas, tokens in/out/total, status final
-    └── events.csv         # uma linha por etapa/agente: tokens, duração, tentativa (junta com runs.csv via RunID)
+    ├── events.csv         # uma linha por etapa/agente: tokens, duração, tentativa (junta com runs.csv via RunID)
+    └── TELEMETRY.md       # relatório legível gerado a partir dos dois CSVs (não edite)
 ```
 
 Os logs trazem o prompt e a resposta completa de cada agente, a saída integral de testes/linters, os relatórios de revisão/segurança/decisão, durações, contagem de tokens e o código de saída final.
 
+O `TELEMETRY.md` é regenerado ao final de cada execução a partir de `runs.csv` e `events.csv`. Ele começa pelos KPIs (total de execuções, taxa de sucesso, tokens acumulados no geral e por etapa E1 a E5, duração média) e segue com o histórico das execuções, da mais recente para a mais antiga, em uma tabela com o cabeçalho `| Data | RunID | Status | Demanda | Stack | Tentativas | Duração | Tokens Totais | Tokens E1 PLAN | ... | Tokens E5 GATE |`. Se o relatório não puder ser gerado, apenas um aviso é exibido e a execução não é interrompida.
+
 ## Códigos de saída
 
-As Etapas 1 e 2 rodam uma única vez, em sequência. Quando o CRITIC responde `SPEC_STATUS: REVISION_REQUIRED` (ou não grava o parecer), a execução para com código `2`; corrija o plano e recomece pela Etapa 1.
+As Etapas 1 e 2 rodam como um loop autônomo (veja [Loop autônomo de especificação](#loop-autônomo-de-especificação)). O código `2` só ocorre quando o CRITIC ainda responde `SPEC_STATUS: REVISION_REQUIRED` (ou não grava o parecer) após `MC_MAX_ATTEMPTS` rodadas; corrija o plano e recomece pela Etapa 1.
 
 | Código | Significado |
 | :--- | :--- |
 | `0` | `APPROVE_MERGE` (ou `-init`/`-setup` bem-sucedido) |
 | `1` | Erro fatal ou circuit breaker acionado |
-| `2` | Especificação bloqueada pelo CRITIC (Etapa 2) após esgotar `-max-attempts` |
+| `2` | Especificação bloqueada pelo CRITIC (Etapa 2) após esgotar `MC_MAX_ATTEMPTS` |
 | `3` | `AMEND_TEST` — teste da Etapa 1 precisa de correção |
 | `4` | `ESCALATE_PLANNER` |
 | `5` | Limite de cota ou tokens atingido (estado gravado em `RESUME.env`, retomável com `-resume`) |

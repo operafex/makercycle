@@ -1,4 +1,4 @@
-# Índice de Demandas — forgeloop
+# Índice de Demandas — MakerCycle
 
 | Data | Stack | Demanda | Arquivo | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -9,3 +9,5 @@
 | 2026-11-18 | Ruby on Rails | Criar arquivo version.go com constante Version = "0.1.0" e função GetVersion() string retornando "forgeloop v0.1.0", com teste unitário em version_test.go | [`2026-11-18-criar-arquivo-version-go-com-constante-versio.md`](2026-11-18-criar-arquivo-version-go-com-constante-versio.md) | `IN_PROGRESS` |
 | 2026-11-19 | Ruby on Rails | Transferir chaves de API para project.env, injetar múltiplas credenciais (OpenAI, Anthropic, Gemini) no ambiente dos agentes, implementar suporte para Cross-Auditing multi-LLM com alertas em models.env e atualizar READMEs | [`2026-11-19-transferir-chaves-de-api-para-project-env-inj.md`](2026-11-19-transferir-chaves-de-api-para-project-env-inj.md) | `QUOTA_PAUSED` |
 | 2026-11-19 | Go | Implementar loop autônomo entre ARCHITECT e SKEPTIC, geração de TELEMETRY.md a partir de CSVs (com coluna Status após RunID) e confirmação de stack no setup com execução silenciosa no task | [`2026-11-19-implementar-loop-autônomo-entre-architect-e-s.md`](2026-11-19-implementar-loop-autônomo-entre-architect-e-s.md) | `IN_PROGRESS` |
+| 2026-11-19 | Go | Adicionar função formatSeconds(n int) string em version.go retornando '<n>s' (ex: 5 -> '5s') e seu teste unitário TestFormatSeconds em version_test.go | [`2026-11-19-adicionar-função-formatseconds-n-int-string-e.md`](2026-11-19-adicionar-função-formatseconds-n-int-string-e.md) | `APPROVED` |
+| 2026-11-19 | Go | Implementar loop autônomo entre PLANNER e CRITIC, geração de TELEMETRY.md a partir de CSVs (com Status após RunID) e confirmação de stack no setup com execução direta no task | [`2026-11-19-implementar-loop-autônomo-entre-planner-e-cri.md`](2026-11-19-implementar-loop-autônomo-entre-planner-e-cri.md) | `APPROVED` |
