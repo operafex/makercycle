@@ -30,15 +30,23 @@ Stages 3 → 4 → 5 run as a closed loop until the GATEKEEPER approves, asks fo
 
 ## Installation
 
-One command, no Go toolchain required. Pre-built binaries are published on every release for `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`, `windows/amd64` and `windows/arm64`.
+**With Go (recommended)** *(requires Go 1.22+)*
 
-**macOS / Linux**
+```bash
+go install github.com/operafex/makercycle@latest
+```
+
+The binary is placed in `$(go env GOPATH)/bin` (usually `~/go/bin`) — make sure that folder is on your `PATH`.
+
+**Without Go** — pre-built binaries are published on every release for `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`, `windows/amd64` and `windows/arm64`. Use the one-line installer for your system:
+
+*macOS / Linux*
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/operafex/makercycle/main/install.sh | sh
 ```
 
-**Windows (PowerShell)**
+*Windows (PowerShell)*
 
 ```powershell
 irm https://raw.githubusercontent.com/operafex/makercycle/main/install.ps1 | iex

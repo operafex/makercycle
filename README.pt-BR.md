@@ -30,15 +30,23 @@ As Etapas 3 → 4 → 5 rodam em loop fechado até o GATEKEEPER aprovar, pedir c
 
 ## Instalação
 
-Um comando, sem precisar do Go instalado. Binários pré-compilados são publicados a cada release para `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`, `windows/amd64` e `windows/arm64`.
+**Com Go (recomendado)** *(requer Go 1.22+)*
 
-**macOS / Linux**
+```bash
+go install github.com/operafex/makercycle@latest
+```
+
+O binário é instalado em `$(go env GOPATH)/bin` (normalmente `~/go/bin`) — garanta que essa pasta esteja no seu `PATH`.
+
+**Sem Go** — binários pré-compilados são publicados a cada release para `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`, `windows/amd64` e `windows/arm64`. Use o instalador de uma linha para o seu sistema:
+
+*macOS / Linux*
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/operafex/makercycle/main/install.sh | sh
 ```
 
-**Windows (PowerShell)**
+*Windows (PowerShell)*
 
 ```powershell
 irm https://raw.githubusercontent.com/operafex/makercycle/main/install.ps1 | iex
