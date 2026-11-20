@@ -23,28 +23,72 @@ As Etapas 3 → 4 → 5 rodam em loop fechado até o GATEKEEPER aprovar, pedir c
 
 ## Requisitos
 
-- **Go 1.22+** (para compilar ou executar o orquestrador)
+- **Go 1.22+** *(somente para compilar do código-fonte ou rodar com `go run .`; não é necessário usando os instaladores)*
 - **Git** (usado no controle de histórico e auditoria de `git diff`)
 - **Pelo menos uma CLI de agente de IA** instalada e configurada (ex.: `claude`, `gemini`, `codex`, `opencode` — configurável livremente por etapa em `.makercycle/config/models.env`)
 - **Node.js / `npx`** *(opcional)*: exigido apenas ao rodar `-init` para instalar automaticamente skills externas declaradas em `models.env`
 
-## Uso Rápido
+## Instalação
 
-### 1. Preparar o ambiente — `-init`
+Um comando, sem precisar do Go instalado. Binários pré-compilados são publicados a cada release para `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`, `windows/amd64` e `windows/arm64`.
+
+**macOS / Linux**
 
 ```bash
-go run . -init                 # ou: ./makercycle -init
-go run . -init -force-skills   # reinstala/atualiza todas as skills
+curl -fsSL https://raw.githubusercontent.com/operafex/makercycle/main/install.sh | sh
 ```
 
-O `-init`:
+**Windows (PowerShell)**
 
-1. verifica no `$PATH` os binários configurados (`claude`, `agy`, `npx`, `git`) e mostra `[OK]` ou `[AUSENTE]`;
-2. coleta as skills únicas das variáveis `MC_*_SKILL` (`.makercycle/config/models.env` / ambiente);
-3. instala as ausentes com `npx skills add <skill> -g -y` (todas, com `-force-skills`). Uma skill conta como presente se existir uma pasta com o nome dela em `skills/`, `.agents/skills/`, `~/.claude/skills/` ou `~/.antigravity/skills/`, ou se o `skills-lock.json` a listar como origem;
-4. cria `.makercycle/{agents,config,state}/`, `<docs>/demands/`, `<docs>/logs/` e `<docs>/references/` e grava o próprio log em `<docs>/logs/`.
+```powershell
+irm https://raw.githubusercontent.com/operafex/makercycle/main/install.ps1 | iex
+```
 
-Termina com código `1` se faltar algum binário ou se a instalação de alguma skill falhar. Toda execução normal também faz um *pre-flight* rápido e avisa (sem bloquear) se alguma skill configurada não estiver instalada.
+Os instaladores baixam do GitHub Releases o binário do seu SO/arquitetura, **verificam o SHA-256 contra o `checksums.txt`** (abortando se divergir), instalam e adicionam a pasta ao `PATH`.
+
+| Variável | Padrão | Finalidade |
+| :--- | :--- | :--- |
+| `MAKERCYCLE_VERSION` | `latest` | Fixa uma release, ex.: `MAKERCYCLE_VERSION=v0.2.0` (formato `vX.Y.Z[-pre]`) |
+| `MAKERCYCLE_INSTALL_DIR` | `~/.local/bin` (macOS/Linux) · `%LOCALAPPDATA%\Programs\makercycle` (Windows) | Onde o binário é instalado |
+
+Verifique a instalação:
+
+```bash
+makercycle -version
+```
+
+## Uso Rápido
+
+### 1. Inicializar em um comando — `makercycle -init`
+
+```bash
+makercycle -init                # provisiona o projeto (pode ser repetido com segurança)
+makercycle -init -force         # também restaura os contratos dos agentes para os templates embutidos
+makercycle -init -force-skills  # também reinstala/atualiza todas as skills
+```
+
+O binário é autossuficiente: os contratos dos agentes (`.makercycle/agents/*.md`) e o template do `models.env` vão embutidos nele. O `makercycle -init`:
+
+1. cria `.makercycle/{agents,config,state,telemetry}/` e extrai os seis contratos de agente para `.makercycle/agents/`. Arquivos existentes são **mantidos**; o `-force` sobrescreve somente `.makercycle/agents/*.md`;
+2. cria `<docs>/demands/`, `<docs>/logs/` e `<docs>/references/` (cada uma com `.gitkeep`) e grava o próprio log em `<docs>/logs/`;
+3. provisiona `.makercycle/config/models.env`: um arquivo existente **nunca** é sobrescrito (nem com `-force`); caso contrário, é copiado de `~/.makercycle/config/models.env` quando este existir (herança global) ou gravado a partir do template embutido;
+4. acrescenta `.makercycle/state/`, `.makercycle/telemetry/` e `.makercycle/config/project.env` ao `.gitignore` (idempotente; entradas equivalentes como `/.makercycle/state` são reconhecidas);
+5. verifica no `$PATH` os binários configurados (e o `git`), mostrando `[OK]` ou `[AUSENTE]`. O `npx` só é exigido quando há skills declaradas;
+6. instala as skills declaradas em `MC_*_SKILL` (todas, com `-force-skills`). Sem nenhuma declarada, a instalação de skills é ignorada. Uma skill conta como presente se existir uma pasta com o nome dela em `skills/`, `.agents/skills/`, `~/.claude/skills/` ou `~/.antigravity/skills/`, ou se o `skills-lock.json` a listar como origem;
+7. detecta e confirma a stack do projeto (salva em `.makercycle/config/project.env`);
+8. se o projeto já tiver arquivos de código, executa o **SCAN** (Etapa 0, SCOUT) para gerar `<docs>/PROJECT_CONTEXT.md`. Sem chaves de API válidas o SCAN é ignorado com um aviso (conclua depois com `-setup`).
+
+Termina com código `1` se faltar algum binário, a instalação de alguma skill falhar ou o SCAN não puder rodar.
+
+#### `models.env` global (`-save-global`)
+
+Ajuste o `.makercycle/config/models.env` uma vez e reaproveite em todo projeto novo:
+
+```bash
+makercycle -save-global   # copia .makercycle/config/models.env para ~/.makercycle/config/models.env
+```
+
+O arquivo é gravado de forma atômica com permissão `0600` (pasta `0700`) e sobrescreve qualquer cópia global anterior. Projetos novos inicializados com `makercycle -init` herdam automaticamente o `~/.makercycle/config/models.env`. Nunca coloque chaves de API nesse arquivo — elas ficam em `.makercycle/config/project.env` (ignorado pelo Git).
 
 ### 2. Onboarding de projeto existente — `-setup` (Etapa 0)
 

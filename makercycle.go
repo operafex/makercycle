@@ -64,9 +64,9 @@ func (t TokenStats) Format() string {
 func main() {
 	runID := newRunID()
 
-	loadEnvFile(".makercycle/config/models.env")
+	loadEnvFile(modelsEnvPath)
 	loadEnvFile(".makercycle/config/project.env")
-	if b, err := os.ReadFile(".makercycle/config/models.env"); err == nil {
+	if b, err := os.ReadFile(modelsEnvPath); err == nil {
 		if msg := modelsEnvKeyWarning(apiKeysInModelsEnv(string(b))); msg != "" {
 			fmt.Fprintln(yellowWriter(os.Stdout), msg)
 		}
@@ -76,8 +76,11 @@ func main() {
 	taskFlag := flag.String("task", "", "Descrição da nova demanda (salva automaticamente em /docs/demands/)")
 	demandFlag := flag.String("demand", "", "Arquivo de demanda existente em <docsDir>/demands/ (ex.: 2026-11-17-x.md)")
 	resumeFlag := flag.Bool("resume", false, "Retoma a execução interrompida a partir de .makercycle/state/RESUME.env")
-	initMode := flag.Bool("init", false, "Verifica binários, instala skills ausentes (npx skills add) e cria a estrutura de pastas")
+	initMode := flag.Bool("init", false, "Inicializa o projeto: templates embutidos, models.env (herda da home), .gitignore, stack, skills e SCAN")
 	forceSkills := flag.Bool("force-skills", false, "Com -init: reinstala/atualiza todas as skills configuradas, mesmo as já presentes")
+	force := flag.Bool("force", false, "Com -init: sobrescreve .makercycle/agents/*.md com os templates embutidos")
+	saveGlobal := flag.Bool("save-global", false, "Copia .makercycle/config/models.env para ~/.makercycle/config/models.env (herança global)")
+	versionFlag := flag.Bool("version", false, "Imprime a versão do makercycle e sai")
 	selectStackFlag := flag.Bool("select-stack", false, "Abre o menu de seleção de stack mesmo com .makercycle/config/project.env válido e salva a escolha")
 	stageFlag := flag.Int("stage", 1, "Etapa inicial do MakerCycle: 1 a 5 (1: Plan, 2: Challenge, 3: Make, 4: Verify, 5: Gate)")
 	maxAttempts := flag.Int("max-attempts", getEnvInt("MC_MAX_ATTEMPTS", 3), "Limite máximo de tentativas no loop (Circuit Breaker)")
@@ -116,8 +119,32 @@ func main() {
 
 	flag.Parse()
 
+	if *versionFlag {
+		fmt.Println(GetVersion())
+		return
+	}
+
 	setFlags := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
+
+	if *saveGlobal {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			fatal("Erro no -save-global: %v", homeErr)
+		}
+		gp, gpErr := globalModelsEnvPath(home)
+		if gpErr == nil {
+			gpErr = saveGlobalModelsEnv(modelsEnvPath, gp)
+		}
+		if gpErr != nil {
+			fatal("Erro no -save-global: %v", gpErr)
+		}
+		fmt.Printf("[OK] %s salvo em %s (herança global para novos projetos).\n", modelsEnvPath, gp)
+		if !*initMode {
+			finish(0)
+			return
+		}
+	}
 
 	if err := validateRunFlags(*taskFlag, *demandFlag, *resumeFlag, setFlags["stage"]); err != nil {
 		fatal("%v", err)
@@ -144,7 +171,15 @@ func main() {
 		if initDocs == "" {
 			initDocs = "docs"
 		}
-		runInit(initDocs, []AgentBinding{scout, planner, critic, maker, auditor, gatekeeper}, *forceSkills)
+		runInit(initOptions{
+			DocsDir:     initDocs,
+			Agents:      []AgentBinding{scout, planner, critic, maker, auditor, gatekeeper},
+			Force:       *force,
+			ForceSkills: *forceSkills,
+			JSONMetrics: *jsonMetrics,
+			SetFlags:    setFlags,
+			Reader:      reader,
+		})
 		return
 	}
 
@@ -562,39 +597,12 @@ func runProjectSetup(reader *bufio.Reader, scout AgentBinding, defaultDocs strin
 		logEvent("AVISO: stack não detectada automaticamente")
 	}
 
-	sourceHint := existingDocs
-	if sourceHint == "" {
-		sourceHint = "Nenhuma documentação prévia informada (criar estrutura inicial em " + targetDocsDir + "/)"
-	}
-
-	detectedHint := "(nenhuma)"
+	detectedName := ""
 	if ok {
-		detectedHint = detected.Name
+		detectedName = detected.Name
 	}
-	prompt := fmt.Sprintf(
-		"Siga estritamente as instruções de @.makercycle/agents/00_SCOUT.md. "+
-			"Documentação existente informada pelo usuário: '%s'. "+
-			"Diretório oficial de saída para documentação: '%s/'. "+
-			"Stack pré-detectada pelo CLI: '%s'. Valide ou corrija as chaves MC_STACK_NAME, MC_TEST_CMD, MC_TYPE_CMD e MC_LINT_CMD em .makercycle/config/project.env, preservando as demais chaves. "+
-			"Analise a estrutura do código existente, leia a documentação informada e gere %s/PROJECT_CONTEXT.md e %s/demands/INDEX.md.",
-		sourceHint, targetDocsDir, detectedHint, targetDocsDir, targetDocsDir,
-	)
-
-	stats, err := runAgent(scout, prompt, jsonMetrics)
-	if err != nil {
-		fatal("Falha na Etapa 0 (SCOUT): %v", err)
-	}
-
-	reportTokens(scout, stats)
-
-	contextPath := filepath.Join(targetDocsDir, "PROJECT_CONTEXT.md")
-	if info, statErr := os.Stat(contextPath); statErr != nil || info.IsDir() {
-		fatal("Etapa 0 terminou sem gerar %s. O SCOUT pode ter sido bloqueado por permissões (veja MC_SCOUT_ARGS em .makercycle/config/models.env) ou falhou ao gravar o arquivo.", contextPath)
-	}
-
-	if err := ensureDocsStructureSection(contextPath, targetDocsDir); err != nil {
-		fmt.Printf("[AVISO] Não foi possível documentar a estrutura de pastas em %s: %v\n", contextPath, err)
-		logEvent("AVISO: falha ao documentar estrutura em %s: %v", contextPath, err)
+	if err := runScoutAgent(scout, targetDocsDir, existingDocs, detectedName, jsonMetrics); err != nil {
+		fatal("%v", err)
 	}
 
 	savedStack, loadErr := loadProjectStack(projectEnvPath)
@@ -1658,99 +1666,4 @@ func preflightSkills(skills []string) {
 	msg := fmt.Sprintf("Skills configuradas e não instaladas: %s. Rode `./makercycle -init` para instalá-las.", strings.Join(missing, ", "))
 	fmt.Printf("\n[AVISO] %s\n", msg)
 	logEvent("AVISO (pre-flight): %s", msg)
-}
-
-func runInit(docsDir string, agents []AgentBinding, forceSkills bool) {
-	printBanner("MAKERCYCLE -init: AMBIENTE E SKILLS", "Binários, skills (npx skills add) e estrutura de pastas")
-	code := 0
-
-	// (d) Estrutura de pastas e log primeiro, para que tudo abaixo fique registrado.
-	if err := ensureMakerCycleDirs(); err != nil {
-		fatal("Erro ao criar .makercycle/: %v", err)
-	}
-	if err := ensureDocsDirs(docsDir); err != nil {
-		fatal("Erro ao criar estrutura de pastas em %s: %v", docsDir, err)
-	}
-	startRunLog(docsDir, "init")
-	logBlock("CABEÇALHO DA EXECUÇÃO (-init)", fmt.Sprintf("Data/Hora: %s\nDocs: %s/\nForce skills: %v\n", time.Now().Format(time.RFC3339), docsDir, forceSkills))
-	fmt.Printf("[OK] Pastas prontas: .makercycle/{agents,config,state}/, %s/demands/, %s/logs/, %s/references/\n", docsDir, docsDir, docsDir)
-	logEvent("Pastas prontas: .makercycle/{agents,config,state}/, %s/demands/, %s/logs/, %s/references/", docsDir, docsDir, docsDir)
-
-	// (a) Binários
-	names := []string{}
-	for _, a := range agents {
-		names = append(names, a.Bin)
-	}
-	names = append(names, "npx", "git")
-	fmt.Println("\nBinários:")
-	npxOK := false
-	for _, b := range checkBinaries(names, exec.LookPath) {
-		if b.Found {
-			fmt.Printf("  [OK]     %s (%s)\n", b.Name, b.Path)
-			logEvent("[OK] binário %s (%s)", b.Name, b.Path)
-			if b.Name == "npx" {
-				npxOK = true
-			}
-		} else {
-			fmt.Printf("  [AUSENTE] %s\n", b.Name)
-			logEvent("[AUSENTE] binário %s", b.Name)
-			code = 1
-		}
-	}
-
-	// (b) Skills configuradas
-	skills := collectConfiguredSkills(os.Environ())
-	if len(skills) == 0 {
-		for _, a := range agents {
-			if sk := strings.TrimSpace(a.Skill); sk != "" {
-				skills = append(skills, sk)
-			}
-		}
-		skills = collectConfiguredSkills(skillEnvFrom(skills))
-	}
-	fmt.Printf("\nSkills configuradas (%d): %s\n", len(skills), strings.Join(skills, ", "))
-	logEvent("Skills configuradas: %s", strings.Join(skills, ", "))
-
-	// (c) Instalação das ausentes (ou de todas, com -force-skills)
-	roots, lock := currentSkillRoots()
-	install := func(skill string) (out string, err error) {
-		if !npxOK {
-			return "", fmt.Errorf("npx ausente no PATH")
-		}
-		args := skillInstallArgs(skill)
-		fmt.Printf("  -> npx %s\n", strings.Join(args, " "))
-		logEvent("Executando: npx %s", strings.Join(args, " "))
-		withSpinner("npx "+strings.Join(args, " "), func() { out, err = execCapture("npx", args) })
-		fmt.Print(out)
-		logBlock("npx "+strings.Join(args, " "), out)
-		return out, err
-	}
-	for _, r := range ensureSkills(skills, roots, lock, forceSkills, install) {
-		switch r.Action {
-		case "presente":
-			fmt.Printf("  [OK]     %s já instalada\n", r.Skill)
-		case "instalada":
-			fmt.Printf("  [OK]     %s instalada/atualizada\n", r.Skill)
-		default:
-			fmt.Printf("  [FALHA]  %s: %v\n", r.Skill, r.Err)
-			code = 1
-		}
-		logEvent("Skill %s: %s (erro: %v)", r.Skill, r.Action, r.Err)
-	}
-
-	if code == 0 {
-		printBanner("-init CONCLUÍDO", "Ambiente pronto. Use ./makercycle -setup (projeto existente) ou ./makercycle -task \"...\".")
-	} else {
-		printBanner("-init CONCLUÍDO COM PENDÊNCIAS", "Há binários ausentes ou skills com falha. Corrija e rode ./makercycle -init novamente.")
-	}
-	finish(code)
-}
-
-// skillEnvFrom monta pares MC_n_SKILL=valor para reaproveitar collectConfiguredSkills (deduplicação/ordem).
-func skillEnvFrom(skills []string) []string {
-	env := make([]string, 0, len(skills))
-	for i, sk := range skills {
-		env = append(env, fmt.Sprintf("MC_%d_SKILL=%s", i, sk))
-	}
-	return env
 }
