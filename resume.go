@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	resumeEnvPath = ".forge/state/RESUME.env"
+	resumeEnvPath = ".makercycle/state/RESUME.env"
 	exitQuota     = 5
 )
 
@@ -50,10 +50,10 @@ func writeResumeState(path string, st ResumeState) error {
 	}
 
 	updates := map[string]string{
-		"FORGE_RESUME_STAGE":   strconv.Itoa(st.Stage),
-		"FORGE_RESUME_DEMAND":  st.Demand,
-		"FORGE_RESUME_STACK":   st.Stack,
-		"FORGE_RESUME_ATTEMPT": strconv.Itoa(st.Attempt),
+		"MC_RESUME_STAGE":   strconv.Itoa(st.Stage),
+		"MC_RESUME_DEMAND":  st.Demand,
+		"MC_RESUME_STACK":   st.Stack,
+		"MC_RESUME_ATTEMPT": strconv.Itoa(st.Attempt),
 	}
 	return writeProjectEnv(path, updates)
 }
@@ -63,34 +63,34 @@ func loadResumeState(path string) (ResumeState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
-			return ResumeState{}, fmt.Errorf("arquivo de retomada %s ausente (use ./forgeloop -stage <N> -demand <arquivo>)", path)
+			return ResumeState{}, fmt.Errorf("arquivo de retomada %s ausente (use ./makercycle -stage <N> -demand <arquivo>)", path)
 		}
 		return ResumeState{}, fmt.Errorf("lendo arquivo de retomada %s: %w", path, err)
 	}
 
 	env := parseEnvContent(string(data))
-	rawStage, ok := env["FORGE_RESUME_STAGE"]
+	rawStage, ok := env["MC_RESUME_STAGE"]
 	if !ok || strings.TrimSpace(rawStage) == "" {
-		return ResumeState{}, fmt.Errorf("FORGE_RESUME_STAGE ausente em %s", path)
+		return ResumeState{}, fmt.Errorf("MC_RESUME_STAGE ausente em %s", path)
 	}
 	stage, err := strconv.Atoi(strings.TrimSpace(rawStage))
 	if err != nil || stage < 1 || stage > 5 {
-		return ResumeState{}, fmt.Errorf("FORGE_RESUME_STAGE inválido em %s: %q", path, rawStage)
+		return ResumeState{}, fmt.Errorf("MC_RESUME_STAGE inválido em %s: %q", path, rawStage)
 	}
 
 	attempt := 1
-	if rawAttempt, hasAttempt := env["FORGE_RESUME_ATTEMPT"]; hasAttempt && strings.TrimSpace(rawAttempt) != "" {
+	if rawAttempt, hasAttempt := env["MC_RESUME_ATTEMPT"]; hasAttempt && strings.TrimSpace(rawAttempt) != "" {
 		att, err := strconv.Atoi(strings.TrimSpace(rawAttempt))
 		if err != nil || att < 1 {
-			return ResumeState{}, fmt.Errorf("FORGE_RESUME_ATTEMPT inválido em %s: %q", path, rawAttempt)
+			return ResumeState{}, fmt.Errorf("MC_RESUME_ATTEMPT inválido em %s: %q", path, rawAttempt)
 		}
 		attempt = att
 	}
 
 	return ResumeState{
 		Stage:   stage,
-		Demand:  env["FORGE_RESUME_DEMAND"],
-		Stack:   env["FORGE_RESUME_STACK"],
+		Demand:  env["MC_RESUME_DEMAND"],
+		Stack:   env["MC_RESUME_STACK"],
 		Attempt: attempt,
 	}, nil
 }
@@ -133,11 +133,11 @@ func resumeStack(name, envPath, root string) (StackConfig, error) {
 func quotaInterruptionReport(st ResumeState, stageLabel, eta string) string {
 	var cmd string
 	if st.Demand != "" {
-		cmd = fmt.Sprintf("./forgeloop -stage %d -demand %s", st.Stage, st.Demand)
+		cmd = fmt.Sprintf("./makercycle -stage %d -demand %s", st.Stage, st.Demand)
 	} else {
-		cmd = fmt.Sprintf("./forgeloop -stage %d", st.Stage)
+		cmd = fmt.Sprintf("./makercycle -stage %d", st.Stage)
 	}
-	return fmt.Sprintf("Etapa interrompida: %s\nTentativa atual: %d\nMotivo: bloqueio por limite de tokens/cota\nTempo para continuar: %s\n\nComandos prontos para continuar:\n  ./forgeloop -resume\n  %s\n",
+	return fmt.Sprintf("Etapa interrompida: %s\nTentativa atual: %d\nMotivo: bloqueio por limite de tokens/cota\nTempo para continuar: %s\n\nComandos prontos para continuar:\n  ./makercycle -resume\n  %s\n",
 		stageLabel, st.Attempt, eta, cmd)
 }
 
@@ -147,7 +147,7 @@ func validateRunFlags(task, demand string, resume, stageSet bool) error {
 		return errors.New("as flags -task e -demand são mutuamente exclusivas")
 	}
 	if resume && (task != "" || demand != "" || stageSet) {
-		return errors.New("a flag -resume não pode ser combinada com -task, -demand ou -stage/-forge")
+		return errors.New("a flag -resume não pode ser combinada com -task, -demand ou -stage")
 	}
 	return nil
 }

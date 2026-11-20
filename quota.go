@@ -131,9 +131,9 @@ func runAgentWithFallback(
 		}
 	}
 
-	stageLabel := agent.Forge
+	stageLabel := agent.Label
 	if agent.Stage != "" {
-		stageLabel = agent.Forge + ": " + agent.Stage
+		stageLabel = agent.Label + ": " + agent.Stage
 	}
 
 	if !omni.Enabled {

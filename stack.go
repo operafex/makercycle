@@ -15,10 +15,10 @@ import (
 	"strings"
 )
 
-const projectEnvPath = ".forge/config/project.env"
+const projectEnvPath = ".makercycle/config/project.env"
 
 var (
-	errProjectStackIncomplete = errors.New("project.env sem FORGE_STACK_NAME/FORGE_TEST_CMD preenchidos")
+	errProjectStackIncomplete = errors.New("project.env sem MC_STACK_NAME/MC_TEST_CMD preenchidos")
 	railsGemRegex             = regexp.MustCompile(`(?m)^\s*gem\s+["']rails["']`)
 	validEnvKey               = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 )
@@ -172,25 +172,25 @@ func loadProjectStack(path string) (StackConfig, error) {
 		return StackConfig{}, fmt.Errorf("lendo %s: %w", path, err)
 	}
 	env := parseEnvContent(string(data))
-	name := env["FORGE_STACK_NAME"]
-	testCmd := env["FORGE_TEST_CMD"]
+	name := env["MC_STACK_NAME"]
+	testCmd := env["MC_TEST_CMD"]
 	if strings.TrimSpace(name) == "" || strings.TrimSpace(testCmd) == "" {
 		return StackConfig{}, errProjectStackIncomplete
 	}
 	return StackConfig{
 		Name:    name,
 		TestCmd: testCmd,
-		TypeCmd: env["FORGE_TYPE_CMD"],
-		LintCmd: env["FORGE_LINT_CMD"],
+		TypeCmd: env["MC_TYPE_CMD"],
+		LintCmd: env["MC_LINT_CMD"],
 	}, nil
 }
 
 func stackEnvValues(s StackConfig) map[string]string {
 	return map[string]string{
-		"FORGE_STACK_NAME": s.Name,
-		"FORGE_TEST_CMD":   s.TestCmd,
-		"FORGE_TYPE_CMD":   s.TypeCmd,
-		"FORGE_LINT_CMD":   s.LintCmd,
+		"MC_STACK_NAME": s.Name,
+		"MC_TEST_CMD":   s.TestCmd,
+		"MC_TYPE_CMD":   s.TypeCmd,
+		"MC_LINT_CMD":   s.LintCmd,
 	}
 }
 
@@ -278,8 +278,8 @@ func writeProjectEnv(path string, updates map[string]string) error {
 
 func setupProjectEnv(envPath, root, docsDir, existingDocs string) (StackConfig, bool, error) {
 	updates := map[string]string{
-		"FORGE_DOCS_DIR":      docsDir,
-		"FORGE_EXISTING_DOCS": existingDocs,
+		"MC_DOCS_DIR":      docsDir,
+		"MC_EXISTING_DOCS": existingDocs,
 	}
 	detected, ok := detectStack(root)
 	if ok {
@@ -300,8 +300,8 @@ func setupProjectEnv(envPath, root, docsDir, existingDocs string) (StackConfig, 
 // Sem stack detectada não há pergunta: apenas as chaves de documentação são gravadas.
 func confirmSetupStack(reader *bufio.Reader, out io.Writer, envPath, root, docsDir, existingDocs string) (StackConfig, bool, error) {
 	updates := map[string]string{
-		"FORGE_DOCS_DIR":      docsDir,
-		"FORGE_EXISTING_DOCS": existingDocs,
+		"MC_DOCS_DIR":      docsDir,
+		"MC_EXISTING_DOCS": existingDocs,
 	}
 	detected, ok := detectStack(root)
 	if !ok {
@@ -336,7 +336,7 @@ func confirmSetupStack(reader *bufio.Reader, out io.Writer, envPath, root, docsD
 	return chosen, true, nil
 }
 
-// resolveRunStack resolve a stack de uma rodada da Forja: usa project.env em silêncio quando válido
+// resolveRunStack resolve a stack de uma rodada do MakerCycle: usa project.env em silêncio quando válido
 // (e forceSelect é falso); caso contrário abre o menu e salva a escolha.
 func resolveRunStack(reader *bufio.Reader, out io.Writer, envPath string, forceSelect bool) (StackConfig, error) {
 	if !forceSelect {

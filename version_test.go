@@ -6,7 +6,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// version — Task 1 (ver .forge/state/PLAN.md / .forge/state/TEST_CASES.md: V-*)
+// version — Task 1 (ver .makercycle/state/PLAN.md / .makercycle/state/TEST_CASES.md: V-*)
 // ---------------------------------------------------------------------------
 
 // V-H1: a constante Version deve ser exatamente "0.1.0".
@@ -16,9 +16,9 @@ func TestVersionConstantValue(t *testing.T) {
 	}
 }
 
-// V-H2: GetVersion deve retornar exatamente "forgeloop v0.1.0".
+// V-H2: GetVersion deve retornar exatamente "makercycle v0.1.0".
 func TestGetVersionReturnsPrefixedVersion(t *testing.T) {
-	want := "forgeloop v0.1.0"
+	want := "makercycle v0.1.0"
 	if got := GetVersion(); got != want {
 		t.Errorf("GetVersion() = %q; want %q", got, want)
 	}
@@ -26,7 +26,7 @@ func TestGetVersionReturnsPrefixedVersion(t *testing.T) {
 
 // V-E1: GetVersion deve ser derivado da constante Version (sem duplicar a string).
 func TestGetVersionIsDerivedFromVersionConstant(t *testing.T) {
-	want := "forgeloop v" + Version
+	want := "makercycle v" + Version
 	if got := GetVersion(); got != want {
 		t.Errorf("GetVersion() = %q; want %q", got, want)
 	}
@@ -40,12 +40,12 @@ func TestVersionIsSemver(t *testing.T) {
 	}
 }
 
-// V-E3: GetVersion deve obedecer estritamente ao formato "forgeloop vX.Y.Z",
+// V-E3: GetVersion deve obedecer estritamente ao formato "makercycle vX.Y.Z",
 // sem espaços nas bordas, quebra de linha, "v" duplicado ou sufixo extra.
 func TestGetVersionStrictFormat(t *testing.T) {
-	format := regexp.MustCompile(`^forgeloop v\d+\.\d+\.\d+$`)
+	format := regexp.MustCompile(`^makercycle v\d+\.\d+\.\d+$`)
 	if got := GetVersion(); !format.MatchString(got) {
-		t.Errorf("GetVersion() = %q; want formato %q", got, "forgeloop vX.Y.Z")
+		t.Errorf("GetVersion() = %q; want formato %q", got, "makercycle vX.Y.Z")
 	}
 }
 

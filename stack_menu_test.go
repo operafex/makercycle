@@ -12,7 +12,7 @@ import (
 // Task 5 — selectStack(reader, out, envPath)
 // ---------------------------------------------------------------------------
 
-const nestEnv = "FORGE_STACK_NAME=\"NestJS + Jest\"\nFORGE_TEST_CMD=\"npm run test\"\nFORGE_LINT_CMD=\"npm run lint\"\n"
+const nestEnv = "MC_STACK_NAME=\"NestJS + Jest\"\nMC_TEST_CMD=\"npm run test\"\nMC_LINT_CMD=\"npm run lint\"\n"
 
 var wantNest = StackConfig{Name: "NestJS + Jest", TestCmd: "npm run test", LintCmd: "npm run lint"}
 
@@ -128,11 +128,11 @@ func TestSelectStackWithoutEnvShowsWarningAndManualMenu(t *testing.T) {
 
 func TestSelectStackIncompleteEnvWarningShowsReason(t *testing.T) {
 	chdirTemp(t)
-	_, out, err := runSelect(t, writeEnv(t, "FORGE_DOCS_DIR=docs\n"), "2\n")
+	_, out, err := runSelect(t, writeEnv(t, "MC_DOCS_DIR=docs\n"), "2\n")
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	if !strings.Contains(out, "[AVISO]") || !strings.Contains(out, "FORGE_STACK_NAME") {
+	if !strings.Contains(out, "[AVISO]") || !strings.Contains(out, "MC_STACK_NAME") {
 		t.Fatalf("aviso deve conter o motivo (chaves ausentes):\n%s", out)
 	}
 }
@@ -158,7 +158,7 @@ func TestSelectStackCustomRequiresTestCommand(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Tasks 6 e 7 — contrato do ONBOARDER, READMEs e dica de build multi-arquivo
+// Tasks 6 e 7 — contrato do SCOUT, READMEs e dica de build multi-arquivo
 // ---------------------------------------------------------------------------
 
 func readRepoFile(t *testing.T, path string) string {
@@ -170,15 +170,15 @@ func readRepoFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-func TestOnboarderContractDocumentsStackKeys(t *testing.T) {
-	c := readRepoFile(t, ".forge/agents/00_ONBOARDER.md")
-	for _, s := range []string{".forge/config/project.env", "FORGE_STACK_NAME", "FORGE_TEST_CMD", "FORGE_TYPE_CMD", "FORGE_LINT_CMD"} {
+func TestScoutContractDocumentsStackKeys(t *testing.T) {
+	c := readRepoFile(t, ".makercycle/agents/00_SCOUT.md")
+	for _, s := range []string{".makercycle/config/project.env", "MC_STACK_NAME", "MC_TEST_CMD", "MC_TYPE_CMD", "MC_LINT_CMD"} {
 		if !strings.Contains(c, s) {
-			t.Fatalf("00_ONBOARDER.md deve mencionar %q", s)
+			t.Fatalf("00_SCOUT.md deve mencionar %q", s)
 		}
 	}
-	if !strings.Contains(c, "FORGE_0_DONE") {
-		t.Fatal("handoff FORGE_0_DONE não pode ser removido")
+	if !strings.Contains(c, "MC_0_DONE") {
+		t.Fatal("handoff MC_0_DONE não pode ser removido")
 	}
 }
 
@@ -190,8 +190,8 @@ func TestReadmesDocumentAutoStack(t *testing.T) {
 	for file, heading := range cases {
 		t.Run(file, func(t *testing.T) {
 			c := readRepoFile(t, file)
-			for _, s := range []string{heading, "FORGE_STACK_NAME", "FORGE_TEST_CMD", "FORGE_TYPE_CMD", "FORGE_LINT_CMD",
-				"Auto-detectado", "go build -o forgeloop ."} {
+			for _, s := range []string{heading, "MC_STACK_NAME", "MC_TEST_CMD", "MC_TYPE_CMD", "MC_LINT_CMD",
+				"Auto-detectado", "go build -o makercycle ."} {
 				if !strings.Contains(c, s) {
 					t.Fatalf("%s deve conter %q", file, s)
 				}
@@ -207,11 +207,11 @@ func TestReadmesDocumentAutoStack(t *testing.T) {
 }
 
 func TestNoSingleFileGoCommands(t *testing.T) {
-	for _, file := range []string{"README.md", "README.pt-BR.md", "forgeloop.go"} {
+	for _, file := range []string{"README.md", "README.pt-BR.md", "makercycle.go"} {
 		c := readRepoFile(t, file)
-		for _, s := range []string{"go run forgeloop.go", "go build -o forgeloop forgeloop.go"} {
+		for _, s := range []string{"go run makercycle.go", "go build -o makercycle makercycle.go"} {
 			if strings.Contains(c, s) {
-				t.Fatalf("%s ainda usa %q, que não compila stack.go/version.go; use `go run .` / `go build -o forgeloop .`", file, s)
+				t.Fatalf("%s ainda usa %q, que não compila stack.go/version.go; use `go run .` / `go build -o makercycle .`", file, s)
 			}
 		}
 	}

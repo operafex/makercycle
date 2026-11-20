@@ -28,13 +28,13 @@ type StackConfig struct {
 }
 
 type AgentBinding struct {
-  Forge string // rótulo da Etapa (ex.: "ETAPA 1"); nome do campo mantido por compatibilidade
+  Label string // rótulo da Etapa (ex.: "ETAPA 1"); nome do campo mantido por compatibilidade
   Alias string
   Bin   string
   Model string
   Skill string
   Args  string
-  Stage string // nome da etapa (ex.: BLUEPRINT), usado no spinner e nos logs
+  Stage string // nome da etapa (ex.: PLAN), usado no spinner e nos logs
 }
 
 type TokenStats struct {
@@ -64,76 +64,75 @@ func (t TokenStats) Format() string {
 func main() {
   runID := newRunID()
 
-  loadEnvFile(".forge/config/models.env")
-  loadEnvFile(".forge/config/project.env")
-  if b, err := os.ReadFile(".forge/config/models.env"); err == nil {
+  loadEnvFile(".makercycle/config/models.env")
+  loadEnvFile(".makercycle/config/project.env")
+  if b, err := os.ReadFile(".makercycle/config/models.env"); err == nil {
     if msg := modelsEnvKeyWarning(apiKeysInModelsEnv(string(b))); msg != "" {
       fmt.Fprintln(yellowWriter(os.Stdout), msg)
     }
   }
 
-  setupMode := flag.Bool("setup", false, "Etapa 0 (Discovery): analisa projeto existente e mapeia documentação")
+  setupMode := flag.Bool("setup", false, "Etapa 0 (Scan): analisa projeto existente e mapeia documentação")
   taskFlag := flag.String("task", "", "Descrição da nova demanda (salva automaticamente em /docs/demands/)")
   demandFlag := flag.String("demand", "", "Arquivo de demanda existente em <docsDir>/demands/ (ex.: 2026-11-17-x.md)")
-  resumeFlag := flag.Bool("resume", false, "Retoma a execução interrompida a partir de .forge/state/RESUME.env")
+  resumeFlag := flag.Bool("resume", false, "Retoma a execução interrompida a partir de .makercycle/state/RESUME.env")
   initMode := flag.Bool("init", false, "Verifica binários, instala skills ausentes (npx skills add) e cria a estrutura de pastas")
   forceSkills := flag.Bool("force-skills", false, "Com -init: reinstala/atualiza todas as skills configuradas, mesmo as já presentes")
-  selectStackFlag := flag.Bool("select-stack", false, "Abre o menu de seleção de stack mesmo com .forge/config/project.env válido e salva a escolha")
-  stageFlag := flag.Int("stage", 1, "Etapa inicial da Forja: 1 a 5 (1: Blueprint, 2: Temper, 3: Strike, 4: Quench, 5: Assay)")
-  forgeAlias := flag.Int("forge", 1, "Alias de compatibilidade para -stage (1 a 5)")
-  maxAttempts := flag.Int("max-attempts", getEnvInt("FORGE_MAX_ATTEMPTS", 3), "Limite máximo de tentativas no loop (Circuit Breaker)")
-  docsDirFlag := flag.String("docs-dir", getEnv("FORGE_DOCS_DIR", getEnv("FORGE_DEFAULT_DOCS_DIR", "docs")), "Diretório de documentação")
+  selectStackFlag := flag.Bool("select-stack", false, "Abre o menu de seleção de stack mesmo com .makercycle/config/project.env válido e salva a escolha")
+  stageFlag := flag.Int("stage", 1, "Etapa inicial do MakerCycle: 1 a 5 (1: Plan, 2: Challenge, 3: Make, 4: Verify, 5: Gate)")
+  maxAttempts := flag.Int("max-attempts", getEnvInt("MC_MAX_ATTEMPTS", 3), "Limite máximo de tentativas no loop (Circuit Breaker)")
+  docsDirFlag := flag.String("docs-dir", getEnv("MC_DOCS_DIR", getEnv("MC_DEFAULT_DOCS_DIR", "docs")), "Diretório de documentação")
   var refFlags stringList
   flag.Var(&refFlags, "ref", "Arquivo de referência para enriquecer a demanda (repetível; caminho direto ou nome dentro de <DOCS_DIR>/references/)")
   jsonMetrics := flag.Bool("json-metrics", true, "Extrai contagem exata de tokens via --output-format json quando suportado")
 
-  // Bindings desacoplados: troque via .forge/config/models.env ou flags CLI
-  onbBin := flag.String("onboarder-bin", getEnv("FORGE_ONBOARDER_BIN", "claude"), "Binário da Etapa 0 (ONBOARDER)")
-  onbModel := flag.String("onboarder-model", getEnv("FORGE_ONBOARDER_MODEL", "opus"), "Modelo da Etapa 0 (ONBOARDER)")
-  onbArgs := flag.String("onboarder-args", getEnv("FORGE_ONBOARDER_ARGS", ""), "Argumentos extras do CLI da Etapa 0 (ONBOARDER)")
+  // Bindings desacoplados: troque via .makercycle/config/models.env ou flags CLI
+  onbBin := flag.String("scout-bin", getEnv("MC_SCOUT_BIN", "claude"), "Binário da Etapa 0 (SCOUT)")
+  onbModel := flag.String("scout-model", getEnv("MC_SCOUT_MODEL", "opus"), "Modelo da Etapa 0 (SCOUT)")
+  onbArgs := flag.String("scout-args", getEnv("MC_SCOUT_ARGS", ""), "Argumentos extras do CLI da Etapa 0 (SCOUT)")
 
-  archBin := flag.String("architect-bin", getEnv("FORGE_ARCHITECT_BIN", "claude"), "Binário da Etapa 1 (ARCHITECT)")
-  archModel := flag.String("architect-model", getEnv("FORGE_ARCHITECT_MODEL", "opus"), "Modelo da Etapa 1 (ARCHITECT)")
-  archSkill := flag.String("architect-skill", getEnv("FORGE_ARCHITECT_SKILL", "obra/superpowers"), "Skill da Etapa 1 (ARCHITECT)")
-  archArgs := flag.String("architect-args", getEnv("FORGE_ARCHITECT_ARGS", ""), "Argumentos extras do CLI da Etapa 1 (ARCHITECT)")
+  archBin := flag.String("planner-bin", getEnv("MC_PLANNER_BIN", "claude"), "Binário da Etapa 1 (PLANNER)")
+  archModel := flag.String("planner-model", getEnv("MC_PLANNER_MODEL", "opus"), "Modelo da Etapa 1 (PLANNER)")
+  archSkill := flag.String("planner-skill", getEnv("MC_PLANNER_SKILL", "obra/superpowers"), "Skill da Etapa 1 (PLANNER)")
+  archArgs := flag.String("planner-args", getEnv("MC_PLANNER_ARGS", ""), "Argumentos extras do CLI da Etapa 1 (PLANNER)")
 
-  skepBin := flag.String("skeptic-bin", getEnv("FORGE_SKEPTIC_BIN", "agy"), "Binário da Etapa 2 (SKEPTIC)")
-  skepModel := flag.String("skeptic-model", getEnv("FORGE_SKEPTIC_MODEL", "GPT-OSS 120B (Medium)"), "Modelo da Etapa 2 (SKEPTIC)")
-  skepSkill := flag.String("skeptic-skill", getEnv("FORGE_SKEPTIC_SKILL", "google/elephant-goldfish-model"), "Skill da Etapa 2 (SKEPTIC)")
-  skepArgs := flag.String("skeptic-args", getEnv("FORGE_SKEPTIC_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 2 (SKEPTIC)")
+  skepBin := flag.String("critic-bin", getEnv("MC_CRITIC_BIN", "agy"), "Binário da Etapa 2 (CRITIC)")
+  skepModel := flag.String("critic-model", getEnv("MC_CRITIC_MODEL", "GPT-OSS 120B (Medium)"), "Modelo da Etapa 2 (CRITIC)")
+  skepSkill := flag.String("critic-skill", getEnv("MC_CRITIC_SKILL", "google/elephant-goldfish-model"), "Skill da Etapa 2 (CRITIC)")
+  skepArgs := flag.String("critic-args", getEnv("MC_CRITIC_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 2 (CRITIC)")
 
-  buildBin := flag.String("builder-bin", getEnv("FORGE_BUILDER_BIN", "agy"), "Binário da Etapa 3 (BUILDER)")
-  buildModel := flag.String("builder-model", getEnv("FORGE_BUILDER_MODEL", "Gemini 3.8 Flash (High)"), "Modelo da Etapa 3 (BUILDER)")
-  buildArgs := flag.String("builder-args", getEnv("FORGE_BUILDER_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 3 (BUILDER)")
+  buildBin := flag.String("maker-bin", getEnv("MC_MAKER_BIN", "agy"), "Binário da Etapa 3 (MAKER)")
+  buildModel := flag.String("maker-model", getEnv("MC_MAKER_MODEL", "Gemini 3.8 Flash (High)"), "Modelo da Etapa 3 (MAKER)")
+  buildArgs := flag.String("maker-args", getEnv("MC_MAKER_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 3 (MAKER)")
 
-  sentBin := flag.String("sentinel-bin", getEnv("FORGE_SENTINEL_BIN", "agy"), "Binário da Etapa 4B (SENTINEL)")
-  sentModel := flag.String("sentinel-model", getEnv("FORGE_SENTINEL_MODEL", "Claude Sonnet 4.6 (Thinking)"), "Modelo da Etapa 4B (SENTINEL)")
-  sentSkill := flag.String("sentinel-skill", getEnv("FORGE_SENTINEL_SKILL", "cloudflare/security-audit-skill"), "Skill da Etapa 4B (SENTINEL)")
-  sentArgs := flag.String("sentinel-args", getEnv("FORGE_SENTINEL_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 4B (SENTINEL)")
+  sentBin := flag.String("auditor-bin", getEnv("MC_AUDITOR_BIN", "agy"), "Binário da Etapa 4B (AUDITOR)")
+  sentModel := flag.String("auditor-model", getEnv("MC_AUDITOR_MODEL", "Claude Sonnet 4.6 (Thinking)"), "Modelo da Etapa 4B (AUDITOR)")
+  sentSkill := flag.String("auditor-skill", getEnv("MC_AUDITOR_SKILL", "cloudflare/security-audit-skill"), "Skill da Etapa 4B (AUDITOR)")
+  sentArgs := flag.String("auditor-args", getEnv("MC_AUDITOR_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 4B (AUDITOR)")
 
-  arbBin := flag.String("arbiter-bin", getEnv("FORGE_ARBITER_BIN", "agy"), "Binário da Etapa 5 (ARBITER)")
-  arbModel := flag.String("arbiter-model", getEnv("FORGE_ARBITER_MODEL", "Claude Sonnet 4.6 (Thinking)"), "Modelo da Etapa 5 (ARBITER)")
-  arbArgs := flag.String("arbiter-args", getEnv("FORGE_ARBITER_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 5 (ARBITER)")
+  arbBin := flag.String("gatekeeper-bin", getEnv("MC_GATEKEEPER_BIN", "agy"), "Binário da Etapa 5 (GATEKEEPER)")
+  arbModel := flag.String("gatekeeper-model", getEnv("MC_GATEKEEPER_MODEL", "Claude Sonnet 4.6 (Thinking)"), "Modelo da Etapa 5 (GATEKEEPER)")
+  arbArgs := flag.String("gatekeeper-args", getEnv("MC_GATEKEEPER_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 5 (GATEKEEPER)")
 
   flag.Parse()
 
   setFlags := map[string]bool{}
   flag.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
 
-  if err := validateRunFlags(*taskFlag, *demandFlag, *resumeFlag, setFlags["stage"] || setFlags["forge"]); err != nil {
+  if err := validateRunFlags(*taskFlag, *demandFlag, *resumeFlag, setFlags["stage"]); err != nil {
     fatal("%v", err)
   }
 
-  if err := ensureForgeDirs(); err != nil {
-    fatal("Erro ao criar estrutura .forge/: %v", err)
+  if err := ensureMakerCycleDirs(); err != nil {
+    fatal("Erro ao criar estrutura .makercycle/: %v", err)
   }
 
-  onboarder := AgentBinding{Forge: "ETAPA 0", Stage: "DISCOVERY", Alias: "ONBOARDER", Bin: *onbBin, Model: *onbModel, Args: *onbArgs}
-  architect := AgentBinding{Forge: "ETAPA 1", Stage: "BLUEPRINT", Alias: "ARCHITECT", Bin: *archBin, Model: *archModel, Skill: *archSkill, Args: *archArgs}
-  skeptic := AgentBinding{Forge: "ETAPA 2", Stage: "TEMPER", Alias: "SKEPTIC", Bin: *skepBin, Model: *skepModel, Skill: *skepSkill, Args: *skepArgs}
-  builder := AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Bin: *buildBin, Model: *buildModel, Args: *buildArgs}
-  sentinel := AgentBinding{Forge: "ETAPA 4B", Stage: "QUENCH APPSEC", Alias: "SENTINEL", Bin: *sentBin, Model: *sentModel, Skill: *sentSkill, Args: *sentArgs}
-  arbiter := AgentBinding{Forge: "ETAPA 5", Stage: "ASSAY", Alias: "ARBITER", Bin: *arbBin, Model: *arbModel, Args: *arbArgs}
+  scout := AgentBinding{Label: "ETAPA 0", Stage: "SCAN", Alias: "SCOUT", Bin: *onbBin, Model: *onbModel, Args: *onbArgs}
+  planner := AgentBinding{Label: "ETAPA 1", Stage: "PLAN", Alias: "PLANNER", Bin: *archBin, Model: *archModel, Skill: *archSkill, Args: *archArgs}
+  critic := AgentBinding{Label: "ETAPA 2", Stage: "CHALLENGE", Alias: "CRITIC", Bin: *skepBin, Model: *skepModel, Skill: *skepSkill, Args: *skepArgs}
+  maker := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: *buildBin, Model: *buildModel, Args: *buildArgs}
+  auditor := AgentBinding{Label: "ETAPA 4B", Stage: "VERIFY: HARDEN", Alias: "AUDITOR", Bin: *sentBin, Model: *sentModel, Skill: *sentSkill, Args: *sentArgs}
+  gatekeeper := AgentBinding{Label: "ETAPA 5", Stage: "GATE", Alias: "GATEKEEPER", Bin: *arbBin, Model: *arbModel, Args: *arbArgs}
 
   reader := bufio.NewReader(os.Stdin)
 
@@ -145,11 +144,11 @@ func main() {
     if initDocs == "" {
       initDocs = "docs"
     }
-    runInit(initDocs, []AgentBinding{onboarder, architect, skeptic, builder, sentinel, arbiter}, *forceSkills)
+    runInit(initDocs, []AgentBinding{scout, planner, critic, maker, auditor, gatekeeper}, *forceSkills)
     return
   }
 
-  authMode, err := resolveAuthMode(os.Getenv("FORGE_AUTH_MODE"))
+  authMode, err := resolveAuthMode(os.Getenv("MC_AUTH_MODE"))
   if err != nil {
     fatal("%v", err)
   }
@@ -163,10 +162,10 @@ func main() {
   omni := loadOmniRouteConfig(os.Getenv)
 
   // =========================================================================
-  // ETAPA 0 — DISCOVERY (-setup): ANÁLISE DE PROJETO EXISTENTE
+  // ETAPA 0 — SCAN (-setup): ANÁLISE DE PROJETO EXISTENTE
   // =========================================================================
   if *setupMode {
-    runProjectSetup(reader, onboarder, *docsDirFlag, *jsonMetrics)
+    runProjectSetup(reader, scout, *docsDirFlag, *jsonMetrics)
     finish(0)
     return
   }
@@ -205,7 +204,7 @@ func main() {
     stack = resStack
   } else {
     var stageErr error
-    startStage, stageErr = resolveStage(*stageFlag, *forgeAlias, setFlags["stage"], setFlags["forge"])
+    startStage, stageErr = resolveStage(*stageFlag)
     if stageErr != nil {
       fatal("%v", stageErr)
     }
@@ -237,7 +236,7 @@ func main() {
     fatal("%v", refErr)
   }
   if len(refs) > 0 && startStage > 1 {
-    fmt.Println("[AVISO] -ref só é usado pelo ARCHITECT (Etapa 1); ignorado ao iniciar a partir da Etapa", startStage)
+    fmt.Println("[AVISO] -ref só é usado pelo PLANNER (Etapa 1); ignorado ao iniciar a partir da Etapa", startStage)
     refs = nil
   }
 
@@ -251,10 +250,10 @@ func main() {
   }
 
   modelsSummary := fmt.Sprintf("F1:%s | F2:%s | F3:%s | F4B:%s | F5:%s",
-    architect.Model, skeptic.Model, builder.Model, sentinel.Model, arbiter.Model)
+    planner.Model, critic.Model, maker.Model, auditor.Model, gatekeeper.Model)
 
   // Log completo da execução em <DOCS_DIR>/logs/ (um arquivo por execução).
-  logSuffix := fmt.Sprintf("forge%d", startStage)
+  logSuffix := fmt.Sprintf("stage%d", startStage)
   if task != "" {
     logSuffix = slugify(task)
   }
@@ -269,7 +268,7 @@ func main() {
     fmt.Printf("\n[DOCS] Demanda registrada em: %s\n", demandFile)
   }
 
-  logBlock("CABEÇALHO DA EXECUÇÃO", buildRunHeader(stack, []AgentBinding{architect, skeptic, builder, sentinel, arbiter},
+  logBlock("CABEÇALHO DA EXECUÇÃO", buildRunHeader(stack, []AgentBinding{planner, critic, maker, auditor, gatekeeper},
     task, demandFile, startStage, *maxAttempts, docsDir))
   if len(refs) > 0 {
     fmt.Printf("[DOCS] Referências anexadas à demanda: %s\n", strings.Join(refs, ", "))
@@ -278,9 +277,9 @@ func main() {
 
   var totalTokens TokenStats
 
-  preflightSkills(stageSkills(startStage, architect, skeptic, sentinel))
+  preflightSkills(stageSkills(startStage, planner, critic, auditor))
 
-  printBanner("A FORJA (FORGELOOP) INICIADA",
+  printBanner("MAKERCYCLE INICIADO",
     fmt.Sprintf("Stack: %s | Docs: /%s | Max Tentativas: %d\nBindings: %s", stack.Name, docsDir, *maxAttempts, modelsSummary))
 
   handleQuotaPause := func(stage int, stageLabel string, res AgentResult, attempt int) {
@@ -304,216 +303,213 @@ func main() {
   }
 
   // =========================================================================
-  // ETAPAS 1 e 2 — BLUEPRINT (ARCHITECT) ↔ TEMPER (SKEPTIC): loop autônomo de especificação
+  // ETAPAS 1 e 2 — PLAN (PLANNER) -> CHALLENGE (CRITIC): execução linear, uma passada
   // =========================================================================
   if startStage <= 2 {
-    skepPrompt := fmt.Sprintf(
-      "Siga estritamente as instruções de @.forge/agents/02_SKEPTIC.md aplicando a skill %s. "+
-        "Diretório de documentação: %s/. Audite @.forge/state/PLAN.md, @.forge/state/TEST_CASES.md e os arquivos de teste recém-criados. "+
-        "Grave seu veredito em .forge/state/SPEC_REVIEW.md.",
-      skeptic.Skill, docsDir,
+    if startStage <= 1 {
+      printBanner("ETAPA 1: PLAN — PLANNER",
+        fmt.Sprintf("Skill: %s | Modelo: %s (%s)", planner.Skill, planner.Model, planner.Bin))
+      planPrompt := fmt.Sprintf(
+        "Siga estritamente as instruções de @.makercycle/agents/01_PLANNER.md aplicando a skill %s. "+
+          "Diretório de documentação: %s/. Stack: %s. Demanda: %s. Arquivo da demanda: %s. "+
+          "Grave .makercycle/state/PLAN.md, .makercycle/state/TEST_CASES.md e os testes em estado RED.",
+        planner.Skill, docsDir, stack.Name, task, demandFile,
+      ) + referencesPrompt(refs)
+      start := time.Now()
+      res := runAgentStep(planner, planPrompt, *jsonMetrics, authMode, omni)
+      recordEventTelemetry(runID, "S1", planner.Alias, res.Model, 1, res.Stats, time.Since(start).Seconds())
+      totalTokens.Add(res.Stats)
+      if res.Quota {
+        handleQuotaPause(1, planner.Label+": "+planner.Stage, res, 1)
+      }
+      if res.Err != nil {
+        fatal("Falha na Etapa 1 (PLANNER): %v", res.Err)
+      }
+      reportTokens(planner, res.Stats)
+    }
+
+    printBanner("ETAPA 2: CHALLENGE — CRITIC",
+      fmt.Sprintf("Skill: %s | Modelo: %s (%s)", critic.Skill, critic.Model, critic.Bin))
+    critPrompt := fmt.Sprintf(
+      "Siga estritamente as instruções de @.makercycle/agents/02_CRITIC.md aplicando a skill %s. "+
+        "Diretório de documentação: %s/. Audite @.makercycle/state/PLAN.md, @.makercycle/state/TEST_CASES.md e os arquivos de teste recém-criados. "+
+        "Grave seu veredito em .makercycle/state/SPEC_REVIEW.md.",
+      critic.Skill, docsDir,
     )
-    outcome := runSpecLoop(startStage, *maxAttempts, specLoopDeps{
-      RunArchitect: func(specAttempt int) AgentResult {
-        printBanner(fmt.Sprintf("ETAPA 1: BLUEPRINT — ARCHITECT (Tentativa %d/%d)", specAttempt, *maxAttempts),
-          fmt.Sprintf("Skill: %s | Modelo: %s (%s)", architect.Skill, architect.Model, architect.Bin))
-        start := time.Now()
-        res := runAgentStep(architect, buildArchitectPrompt(architect.Skill, docsDir, stack.Name, task, demandFile, refs, specAttempt, *maxAttempts), *jsonMetrics, authMode, omni)
-        recordEventTelemetry(runID, "F1", architect.Alias, res.Model, specAttempt, res.Stats, time.Since(start).Seconds())
-        if !res.Quota && res.Err == nil {
-          reportTokens(architect, res.Stats)
-        }
-        return res
-      },
-      RunSkeptic: func(specAttempt int) AgentResult {
-        printBanner(fmt.Sprintf("ETAPA 2: TEMPER — SKEPTIC (Tentativa %d/%d)", specAttempt, *maxAttempts),
-          fmt.Sprintf("Skill: %s | Modelo: %s (%s)", skeptic.Skill, skeptic.Model, skeptic.Bin))
-        start := time.Now()
-        res := runAgentStep(skeptic, skepPrompt, *jsonMetrics, authMode, omni)
-        recordEventTelemetry(runID, "F2", skeptic.Alias, res.Model, specAttempt, res.Stats, time.Since(start).Seconds())
-        if !res.Quota && res.Err == nil {
-          reportTokens(skeptic, res.Stats)
-        }
-        return res
-      },
-      ReadReview: func() (string, error) {
-        c, err := readFile(".forge/state/SPEC_REVIEW.md")
-        if err == nil {
-          logBlock(".forge/state/SPEC_REVIEW.md", c)
-        }
-        return c, err
-      },
-      Warn: func(msg string) {
-        fmt.Println(msg)
-        logEvent("%s", msg)
-      },
-    })
-    totalTokens.Add(outcome.Tokens) // soma de todas as reiterações, antes de qualquer desvio
-    switch {
-    case outcome.QuotaStage == 1:
-      handleQuotaPause(1, architect.Forge+": "+architect.Stage, outcome.QuotaResult, 1)
-    case outcome.QuotaStage == 2:
-      handleQuotaPause(2, skeptic.Forge+": "+skeptic.Stage, outcome.QuotaResult, 1)
-    case outcome.FailedStage == 1:
-      fatal("Falha na Etapa 1 (ARCHITECT): %v", outcome.Err)
-    case outcome.FailedStage == 2:
-      fatal("Falha na Etapa 2 (SKEPTIC): %v", outcome.Err)
-    case outcome.Decision != specApproved:
+    _ = os.Remove(".makercycle/state/SPEC_REVIEW.md") // evita ler um parecer de execução anterior
+    start := time.Now()
+    res := runAgentStep(critic, critPrompt, *jsonMetrics, authMode, omni)
+    recordEventTelemetry(runID, "S2", critic.Alias, res.Model, 1, res.Stats, time.Since(start).Seconds())
+    totalTokens.Add(res.Stats)
+    if res.Quota {
+      handleQuotaPause(2, critic.Label+": "+critic.Stage, res, 1)
+    }
+    if res.Err != nil {
+      fatal("Falha na Etapa 2 (CRITIC): %v", res.Err)
+    }
+    reportTokens(critic, res.Stats)
+
+    review, err := readFile(".makercycle/state/SPEC_REVIEW.md")
+    if err != nil {
+      fatal("O CRITIC não gerou .makercycle/state/SPEC_REVIEW.md: %v", err)
+    }
+    logBlock(".makercycle/state/SPEC_REVIEW.md", review)
+    if !strings.Contains(review, "SPEC_STATUS: APPROVED") {
       updateDemandStatus(demandFile, "SPEC_REVISION_REQUIRED", 0, totalTokens)
-      recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, 0, totalTokens, "SPEC_REVISION_REQUIRED", specAbortNote(outcome.Attempts))
-      printBanner("BLOQUEIO NA ETAPA 2 (TEMPER)", fmt.Sprintf("O SKEPTIC exigiu ajustes em %d tentativa(s) de especificação. Consulte .forge/state/SPEC_REVIEW.md.", outcome.Attempts))
+      recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, 0, totalTokens, "SPEC_REVISION_REQUIRED", "Especificação reprovada pelo CRITIC")
+      printBanner("BLOQUEIO NA ETAPA 2 (CHALLENGE)", "O CRITIC exigiu ajustes na especificação. Consulte .makercycle/state/SPEC_REVIEW.md e rode novamente a partir da Etapa 1.")
       finish(2)
     }
-    fmt.Printf("\n[OK] Especificação aprovada (SPEC_STATUS: APPROVED) na tentativa %d/%d. Entrando no ciclo Strike -> Quench -> Assay...\n", outcome.Attempts, *maxAttempts)
+    fmt.Println("\n[OK] Especificação aprovada (SPEC_STATUS: APPROVED). Entrando no ciclo Make -> Verify -> Gate...")
   }
 
   // =========================================================================
-  // LOOP FECHADO: ETAPA 3 (STRIKE) -> ETAPA 4 (QUENCH) -> ETAPA 5 (ASSAY)
+  // LOOP FECHADO: ETAPA 3 (MAKE) -> ETAPA 4 (VERIFY) -> ETAPA 5 (GATE)
   // =========================================================================
   var checksPassed bool
   for attempt := firstAttempt; attempt <= *maxAttempts; attempt++ {
-    // ETAPA 3 — STRIKE: BUILDER (Contexto Limpo)
+    // ETAPA 3 — MAKE: MAKER (Contexto Limpo)
     if shouldRunStage(3, startStage, attempt, firstAttempt) {
-      printBanner(fmt.Sprintf("ETAPA 3: STRIKE — BUILDER (Tentativa %d/%d)", attempt, *maxAttempts),
-        fmt.Sprintf("Contexto Higienizado | Modelo: %s (%s)", builder.Model, builder.Bin))
+      printBanner(fmt.Sprintf("ETAPA 3: MAKE — MAKER (Tentativa %d/%d)", attempt, *maxAttempts),
+        fmt.Sprintf("Contexto Higienizado | Modelo: %s (%s)", maker.Model, maker.Bin))
 
       execPrompt := fmt.Sprintf(
-        "Siga estritamente as instruções de @.forge/agents/03_BUILDER.md. Diretório de docs: %s/. "+
-          "Leia @.forge/state/PLAN.md e @.forge/state/TEST_CASES.md e implemente as Tasks no código de produção.",
+        "Siga estritamente as instruções de @.makercycle/agents/03_MAKER.md. Diretório de docs: %s/. "+
+          "Leia @.makercycle/state/PLAN.md e @.makercycle/state/TEST_CASES.md e implemente as Tasks no código de produção.",
         docsDir,
       )
       if attempt > 1 {
-        execPrompt += " ATENÇÃO: Rodada de correção. Leia @.forge/state/DECISION.md, @.forge/state/VERIFY_REPORT.md e @.forge/state/SECURITY_REPORT.md e corrija todos os apontamentos."
+        execPrompt += " ATENÇÃO: Rodada de correção. Leia @.makercycle/state/DECISION.md, @.makercycle/state/VERIFY_REPORT.md e @.makercycle/state/SECURITY_REPORT.md e corrija todos os apontamentos."
       }
 
       bStart := time.Now()
-      res := runAgentStep(builder, execPrompt, *jsonMetrics, authMode, omni)
-      recordEventTelemetry(runID, "F3", builder.Alias, res.Model, attempt, res.Stats, time.Since(bStart).Seconds())
+      res := runAgentStep(maker, execPrompt, *jsonMetrics, authMode, omni)
+      recordEventTelemetry(runID, "S3", maker.Alias, res.Model, attempt, res.Stats, time.Since(bStart).Seconds())
       totalTokens.Add(res.Stats)
       if res.Quota {
-        handleQuotaPause(3, builder.Forge+": "+builder.Stage, res, attempt)
+        handleQuotaPause(3, maker.Label+": "+maker.Stage, res, attempt)
       }
       if res.Err != nil {
-        fatal("Falha na Etapa 3 (BUILDER): %v (verifique FORGE_BUILDER_MODEL/FORGE_BUILDER_BIN em .forge/config/models.env)", res.Err)
+        fatal("Falha na Etapa 3 (MAKER): %v (verifique MC_MAKER_MODEL/MC_MAKER_BIN em .makercycle/config/models.env)", res.Err)
       }
-      reportTokens(builder, res.Stats)
+      reportTokens(maker, res.Stats)
     }
 
-    // ETAPA 4A & 4B — QUENCH
+    // ETAPA 4A & 4B — VERIFY
     if shouldRunStage(4, startStage, attempt, firstAttempt) {
-      // ETAPA 4A — QUENCH TESTS: Verificação Determinística
-      printBanner(fmt.Sprintf("ETAPA 4A: QUENCH TESTS (Tentativa %d/%d)", attempt, *maxAttempts),
+      // ETAPA 4A — VERIFY: CHECK: Verificação Determinística
+      printBanner(fmt.Sprintf("ETAPA 4A: VERIFY: CHECK (Tentativa %d/%d)", attempt, *maxAttempts),
         fmt.Sprintf("Runner Determinístico (%s)", stack.Name))
       checksPassed = runDeterministicChecks(stack)
 
-      // ETAPA 4B — QUENCH APPSEC: SENTINEL
-      printBanner(fmt.Sprintf("ETAPA 4B: QUENCH APPSEC — SENTINEL (Tentativa %d/%d)", attempt, *maxAttempts),
-        fmt.Sprintf("Skill: %s | Modelo: %s", sentinel.Skill, sentinel.Model))
+      // ETAPA 4B — VERIFY: HARDEN: AUDITOR
+      printBanner(fmt.Sprintf("ETAPA 4B: VERIFY: HARDEN — AUDITOR (Tentativa %d/%d)", attempt, *maxAttempts),
+        fmt.Sprintf("Skill: %s | Modelo: %s", auditor.Skill, auditor.Model))
 
       secPrompt := fmt.Sprintf(
-        "Siga estritamente as instruções de @.forge/agents/04_SENTINEL.md aplicando a skill %s. "+
-          "Audite o git diff atual e grave o relatório em .forge/state/SECURITY_REPORT.md.",
-        sentinel.Skill,
+        "Siga estritamente as instruções de @.makercycle/agents/04_AUDITOR.md aplicando a skill %s. "+
+          "Audite o git diff atual e grave o relatório em .makercycle/state/SECURITY_REPORT.md.",
+        auditor.Skill,
       )
-      secReportPath := ".forge/state/SECURITY_REPORT.md"
+      secReportPath := ".makercycle/state/SECURITY_REPORT.md"
       var secModBefore time.Time
       if fi, statErr := os.Stat(secReportPath); statErr == nil {
         secModBefore = fi.ModTime()
       }
       sStart := time.Now()
-      res := runAgentStep(sentinel, secPrompt, *jsonMetrics, authMode, omni)
-      recordEventTelemetry(runID, "F4B", sentinel.Alias, res.Model, attempt, res.Stats, time.Since(sStart).Seconds())
+      res := runAgentStep(auditor, secPrompt, *jsonMetrics, authMode, omni)
+      recordEventTelemetry(runID, "S4B", auditor.Alias, res.Model, attempt, res.Stats, time.Since(sStart).Seconds())
       totalTokens.Add(res.Stats)
       if res.Quota {
-        handleQuotaPause(4, sentinel.Forge+": "+sentinel.Stage, res, attempt)
+        handleQuotaPause(4, auditor.Label+": "+auditor.Stage, res, attempt)
       }
       if res.Err != nil {
-        fmt.Printf("[AVISO] SENTINEL (AppSec) retornou erro de processo: %v\n", res.Err)
-        logEvent("AVISO: SENTINEL retornou erro de processo: %v", res.Err)
+        fmt.Printf("[AVISO] AUDITOR (AppSec) retornou erro de processo: %v\n", res.Err)
+        logEvent("AVISO: AUDITOR retornou erro de processo: %v", res.Err)
       }
       if secContent, readErr := readFile(secReportPath); readErr == nil {
-        logBlock(".forge/state/SECURITY_REPORT.md (tentativa "+strconv.Itoa(attempt)+")", secContent)
+        logBlock(".makercycle/state/SECURITY_REPORT.md (tentativa "+strconv.Itoa(attempt)+")", secContent)
       }
       if fi, statErr := os.Stat(secReportPath); statErr != nil {
-        fmt.Printf("[AVISO] SENTINEL não gerou %s. A auditoria de segurança NÃO foi registrada (verifique permissões em FORGE_SENTINEL_ARGS).\n", secReportPath)
+        fmt.Printf("[AVISO] AUDITOR não gerou %s. A auditoria de segurança NÃO foi registrada (verifique permissões em MC_AUDITOR_ARGS).\n", secReportPath)
       } else if !secModBefore.IsZero() && !fi.ModTime().After(secModBefore) {
-        fmt.Printf("[AVISO] SENTINEL não atualizou %s nesta tentativa; o relatório é de uma execução anterior.\n", secReportPath)
+        fmt.Printf("[AVISO] AUDITOR não atualizou %s nesta tentativa; o relatório é de uma execução anterior.\n", secReportPath)
       }
-      reportTokens(sentinel, res.Stats)
+      reportTokens(auditor, res.Stats)
     }
 
-    // ETAPA 5 — ASSAY: ARBITER
+    // ETAPA 5 — GATE: GATEKEEPER
     if shouldRunStage(5, startStage, attempt, firstAttempt) {
       if startStage == 5 && attempt == firstAttempt {
-        if content, err := readFile(".forge/state/VERIFY_REPORT.md"); err == nil {
+        if content, err := readFile(".makercycle/state/VERIFY_REPORT.md"); err == nil {
           checksPassed = strings.Contains(content, "ALL_CHECKS_PASSED")
         }
       }
 
-      printBanner(fmt.Sprintf("ETAPA 5: ASSAY — ARBITER (Tentativa %d/%d)", attempt, *maxAttempts),
-        fmt.Sprintf("Modelo: %s (%s)", arbiter.Model, arbiter.Bin))
+      printBanner(fmt.Sprintf("ETAPA 5: GATE — GATEKEEPER (Tentativa %d/%d)", attempt, *maxAttempts),
+        fmt.Sprintf("Modelo: %s (%s)", gatekeeper.Model, gatekeeper.Bin))
 
       arbPrompt := fmt.Sprintf(
-        "Siga estritamente as instruções de @.forge/agents/05_ARBITER.md. "+
+        "Siga estritamente as instruções de @.makercycle/agents/05_GATEKEEPER.md. "+
           "Esta é a tentativa ATTEMPT: %d de %d. "+
-          "Analise @.forge/state/PLAN.md, @.forge/state/TEST_CASES.md, @.forge/state/VERIFY_REPORT.md, @.forge/state/SECURITY_REPORT.md e execute git diff. "+
-          "Grave seu veredito em .forge/state/DECISION.md.",
+          "Analise @.makercycle/state/PLAN.md, @.makercycle/state/TEST_CASES.md, @.makercycle/state/VERIFY_REPORT.md, @.makercycle/state/SECURITY_REPORT.md e execute git diff. "+
+          "Grave seu veredito em .makercycle/state/DECISION.md.",
         attempt, *maxAttempts,
       )
 
       aStart := time.Now()
-      res := runAgentStep(arbiter, arbPrompt, *jsonMetrics, authMode, omni)
-      recordEventTelemetry(runID, "F5", arbiter.Alias, res.Model, attempt, res.Stats, time.Since(aStart).Seconds())
+      res := runAgentStep(gatekeeper, arbPrompt, *jsonMetrics, authMode, omni)
+      recordEventTelemetry(runID, "S5", gatekeeper.Alias, res.Model, attempt, res.Stats, time.Since(aStart).Seconds())
       totalTokens.Add(res.Stats)
       if res.Quota {
-        handleQuotaPause(5, arbiter.Forge+": "+arbiter.Stage, res, attempt)
+        handleQuotaPause(5, gatekeeper.Label+": "+gatekeeper.Stage, res, attempt)
       }
       if res.Err != nil {
-        fatal("Falha na Etapa 5 (ARBITER): %v", res.Err)
+        fatal("Falha na Etapa 5 (GATEKEEPER): %v", res.Err)
       }
-      reportTokens(arbiter, res.Stats)
-      fmt.Printf("[TOKENS ACUMULADOS NA FORJA] %s\n", totalTokens.Format())
-      logEvent("TOKENS ACUMULADOS NA FORJA: %s", totalTokens.Format())
+      reportTokens(gatekeeper, res.Stats)
+      fmt.Printf("[TOKENS ACUMULADOS NO MAKERCYCLE] %s\n", totalTokens.Format())
+      logEvent("TOKENS ACUMULADOS NO MAKERCYCLE: %s", totalTokens.Format())
 
-      decisionContent, err := readFile(".forge/state/DECISION.md")
+      decisionContent, err := readFile(".makercycle/state/DECISION.md")
       if err != nil {
-        fatal("Não foi possível ler .forge/state/DECISION.md: %v", err)
+        fatal("Não foi possível ler .makercycle/state/DECISION.md: %v", err)
       }
-      logBlock(".forge/state/DECISION.md (tentativa "+strconv.Itoa(attempt)+")", decisionContent)
+      logBlock(".makercycle/state/DECISION.md (tentativa "+strconv.Itoa(attempt)+")", decisionContent)
 
       switch {
       case strings.Contains(decisionContent, "DECISION: APPROVE_MERGE"):
         clearResumeState(resumeEnvPath)
         updateDemandStatus(demandFile, "APPROVED", attempt, totalTokens)
         recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, "APPROVED", "Testes, AppSec e Diff-Judge aprovados")
-        printBanner("A FORJA CONCLUÍDA — APPROVE_MERGE",
+        printBanner("MAKERCYCLE CONCLUÍDO — APPROVE_MERGE",
           fmt.Sprintf("Aprovado em %d tentativa(s) | Gasto Total: %s", attempt, totalTokens.Format()))
         finish(0)
 
       case strings.Contains(decisionContent, "DECISION: AMEND_TEST"):
         updateDemandStatus(demandFile, "AMEND_TEST", attempt, totalTokens)
         recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, "AMEND_TEST", "Erro detectado no teste da Etapa 1")
-        printBanner("INTERVENÇÃO NECESSÁRIA — AMEND_TEST", "O ARBITER identificou bug em um teste da Etapa 1. Revise .forge/state/DECISION.md.")
+        printBanner("INTERVENÇÃO NECESSÁRIA — AMEND_TEST", "O GATEKEEPER identificou bug em um teste da Etapa 1. Revise .makercycle/state/DECISION.md.")
         finish(3)
 
-      case strings.Contains(decisionContent, "DECISION: ESCALATE_ARCHITECT"):
-        updateDemandStatus(demandFile, "ESCALATE_ARCHITECT", attempt, totalTokens)
-        recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, "ESCALATE_ARCHITECT", "Escalonado para revisão arquitetural")
-        printBanner("CIRCUIT BREAKER — ESCALATE_ARCHITECT", "Falha estrutural ou limite atingido. Consulte .forge/state/DECISION.md.")
+      case strings.Contains(decisionContent, "DECISION: ESCALATE_PLANNER"):
+        updateDemandStatus(demandFile, "ESCALATE_PLANNER", attempt, totalTokens)
+        recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, "ESCALATE_PLANNER", "Escalonado para revisão arquitetural")
+        printBanner("CIRCUIT BREAKER — ESCALATE_PLANNER", "Falha estrutural ou limite atingido. Consulte .makercycle/state/DECISION.md.")
         finish(4)
 
       case strings.Contains(decisionContent, "DECISION: RETRY_EXECUTION"):
         if !checksPassed {
-          fmt.Println("\n[LOOP] Testes falharam na Etapa 4A. Reiniciando Etapa 3 (Strike) com contexto limpo...")
+          fmt.Println("\n[LOOP] Testes falharam na Etapa 4A. Reiniciando Etapa 3 (Make) com contexto limpo...")
         } else {
-          fmt.Println("\n[LOOP] Apontamento de segurança ou qualidade semântica. Reiniciando Etapa 3 (Strike)...")
+          fmt.Println("\n[LOOP] Apontamento de segurança ou qualidade semântica. Reiniciando Etapa 3 (Make)...")
         }
         continue
 
       default:
         updateDemandStatus(demandFile, "UNKNOWN_VERDICT", attempt, totalTokens)
         recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, "UNKNOWN_VERDICT", "Veredito não reconhecido")
-        fatal("Veredito não reconhecido em .forge/state/DECISION.md.")
+        fatal("Veredito não reconhecido em .makercycle/state/DECISION.md.")
       }
     }
   }
@@ -525,9 +521,9 @@ func main() {
   finish(1)
 }
 
-func runProjectSetup(reader *bufio.Reader, onboarder AgentBinding, defaultDocs string, jsonMetrics bool) {
-  printBanner("ETAPA 0: DISCOVERY — SETUP DE PROJETO EXISTENTE",
-    fmt.Sprintf("Agente: %s (%s / %s)", onboarder.Alias, onboarder.Bin, onboarder.Model))
+func runProjectSetup(reader *bufio.Reader, scout AgentBinding, defaultDocs string, jsonMetrics bool) {
+  printBanner("ETAPA 0: SCAN — SETUP DE PROJETO EXISTENTE",
+    fmt.Sprintf("Agente: %s (%s / %s)", scout.Alias, scout.Bin, scout.Model))
 
   fmt.Print("\nOnde está localizada a documentação atual do projeto? (ex: docs, wiki, README.md ou Enter para criar /docs): ")
   existingDocs, _ := reader.ReadString('\n')
@@ -541,14 +537,14 @@ func runProjectSetup(reader *bufio.Reader, onboarder AgentBinding, defaultDocs s
     targetDocsDir = "docs"
   }
 
-  if err := ensureForgeDirs(); err != nil {
-    fatal("Erro ao criar estrutura .forge/: %v", err)
+  if err := ensureMakerCycleDirs(); err != nil {
+    fatal("Erro ao criar estrutura .makercycle/: %v", err)
   }
   if err := ensureDocsDirs(targetDocsDir); err != nil {
     fatal("Erro ao criar estrutura de pastas em %s: %v", targetDocsDir, err)
   }
-  startRunLog(targetDocsDir, "forge0")
-  logBlock("CABEÇALHO DA EXECUÇÃO", buildRunHeader(StackConfig{Name: "(n/a — Etapa 0 Discovery)"}, []AgentBinding{onboarder},
+  startRunLog(targetDocsDir, "stage0")
+  logBlock("CABEÇALHO DA EXECUÇÃO", buildRunHeader(StackConfig{Name: "(n/a — Etapa 0 Scan)"}, []AgentBinding{scout},
     "", "", 0, 0, targetDocsDir))
 
   detected, ok, envErr := confirmSetupStack(reader, os.Stdout, projectEnvPath, ".", targetDocsDir, existingDocs)
@@ -558,7 +554,7 @@ func runProjectSetup(reader *bufio.Reader, onboarder AgentBinding, defaultDocs s
   if ok {
     logEvent("STACK CONFIRMADA: %s (testes: %s)", detected.Name, detected.TestCmd)
   } else {
-    fmt.Println("[AVISO] Stack não detectada automaticamente. O ONBOARDER tentará identificá-la.")
+    fmt.Println("[AVISO] Stack não detectada automaticamente. O SCOUT tentará identificá-la.")
     logEvent("AVISO: stack não detectada automaticamente")
   }
 
@@ -572,24 +568,24 @@ func runProjectSetup(reader *bufio.Reader, onboarder AgentBinding, defaultDocs s
     detectedHint = detected.Name
   }
   prompt := fmt.Sprintf(
-    "Siga estritamente as instruções de @.forge/agents/00_ONBOARDER.md. "+
+    "Siga estritamente as instruções de @.makercycle/agents/00_SCOUT.md. "+
       "Documentação existente informada pelo usuário: '%s'. "+
       "Diretório oficial de saída para documentação: '%s/'. "+
-      "Stack pré-detectada pelo CLI: '%s'. Valide ou corrija as chaves FORGE_STACK_NAME, FORGE_TEST_CMD, FORGE_TYPE_CMD e FORGE_LINT_CMD em .forge/config/project.env, preservando as demais chaves. "+
+      "Stack pré-detectada pelo CLI: '%s'. Valide ou corrija as chaves MC_STACK_NAME, MC_TEST_CMD, MC_TYPE_CMD e MC_LINT_CMD em .makercycle/config/project.env, preservando as demais chaves. "+
       "Analise a estrutura do código existente, leia a documentação informada e gere %s/PROJECT_CONTEXT.md e %s/demands/INDEX.md.",
     sourceHint, targetDocsDir, detectedHint, targetDocsDir, targetDocsDir,
   )
 
-  stats, err := runAgent(onboarder, prompt, jsonMetrics)
+  stats, err := runAgent(scout, prompt, jsonMetrics)
   if err != nil {
-    fatal("Falha na Etapa 0 (ONBOARDER): %v", err)
+    fatal("Falha na Etapa 0 (SCOUT): %v", err)
   }
 
-  reportTokens(onboarder, stats)
+  reportTokens(scout, stats)
 
   contextPath := filepath.Join(targetDocsDir, "PROJECT_CONTEXT.md")
   if info, statErr := os.Stat(contextPath); statErr != nil || info.IsDir() {
-    fatal("Etapa 0 terminou sem gerar %s. O ONBOARDER pode ter sido bloqueado por permissões (veja FORGE_ONBOARDER_ARGS em .forge/config/models.env) ou falhou ao gravar o arquivo.", contextPath)
+    fatal("Etapa 0 terminou sem gerar %s. O SCOUT pode ter sido bloqueado por permissões (veja MC_SCOUT_ARGS em .makercycle/config/models.env) ou falhou ao gravar o arquivo.", contextPath)
   }
 
   if err := ensureDocsStructureSection(contextPath, targetDocsDir); err != nil {
@@ -646,7 +642,7 @@ func registerDemandInDocs(docsDir, stackName, task, modelsSummary, logName strin
         "- **Tokens Totais:** `0`\n"+
         "%s%s\n"+
         "## Descrição Original\n\n%s\n\n"+
-        "## Blueprint & Critérios de Aceite\n\n*(Será preenchido automaticamente pelo ARCHITECT na Etapa 1)*\n",
+        "## Plano & Critérios de Aceite\n\n*(Será preenchido automaticamente pelo PLANNER na Etapa 1)*\n",
       task, time.Now().Format("2006-01-02 15:04"), stackName, modelsSummary, logLine, referencesLine(refs), task,
     )
     _ = os.WriteFile(fullPath, []byte(content), 0644)
@@ -675,7 +671,7 @@ func registerDemandInDocs(docsDir, stackName, task, modelsSummary, logName strin
 
   indexPath := filepath.Join(demandsDir, "INDEX.md")
   if _, err := os.Stat(indexPath); os.IsNotExist(err) {
-    header := "# Índice de Demandas — forgeloop\n\n| Data | Stack | Demanda | Arquivo | Status |\n| :--- | :--- | :--- | :--- | :--- |\n"
+    header := "# Índice de Demandas — makercycle\n\n| Data | Stack | Demanda | Arquivo | Status |\n| :--- | :--- | :--- | :--- | :--- |\n"
     _ = os.WriteFile(indexPath, []byte(header), 0644)
   }
 
@@ -756,7 +752,7 @@ func runDeterministicChecks(stack StackConfig) bool {
     var output string
     var err error
     t0 := time.Now()
-    withSpinner(fmt.Sprintf("ETAPA 4A: QUENCH TESTS | %s", c.cmd), func() {
+    withSpinner(fmt.Sprintf("ETAPA 4A: VERIFY: CHECK | %s", c.cmd), func() {
       output, err = runShellCommand(c.cmd)
     })
     fmt.Print(output)
@@ -772,22 +768,22 @@ func runDeterministicChecks(stack StackConfig) bool {
   header := fmt.Sprintf("# Relatório de Verificação Determinística (Etapa 4A)\n\nALL_CHECKS_PASSED: %v\nStack: %s\nTimestamp: %s\n\n",
     allPassed, stack.Name, time.Now().Format(time.RFC3339))
 
-  _ = os.WriteFile(".forge/state/VERIFY_REPORT.md", []byte(header+report.String()), 0644)
+  _ = os.WriteFile(".makercycle/state/VERIFY_REPORT.md", []byte(header+report.String()), 0644)
   logEvent("ETAPA 4A: ALL_CHECKS_PASSED=%v", allPassed)
   return allPassed
 }
 
 func agentLabel(a AgentBinding) string {
-  stage := a.Forge
+  stage := a.Label
   if a.Stage != "" {
-    stage = a.Forge + ": " + a.Stage
+    stage = a.Label + ": " + a.Stage
   }
   return fmt.Sprintf("%s — %s | %s", stage, a.Alias, a.Model)
 }
 
 // runAgent executa o agente preservando a assinatura legada (utilizada no setup da Etapa 0 e testes legados).
 func runAgent(agent AgentBinding, prompt string, tryJSON bool) (TokenStats, error) {
-  mode, err := resolveAuthMode(os.Getenv("FORGE_AUTH_MODE"))
+  mode, err := resolveAuthMode(os.Getenv("MC_AUTH_MODE"))
   if err != nil {
     mode = authModeAPIKey
   }
@@ -884,7 +880,7 @@ func execCapture(bin string, args []string) (string, error) {
 // agentEnvFromProcess monta o ambiente do subprocesso a partir de os.Environ() (já com models.env/project.env carregados)
 // usando o modo de autenticação configurado.
 func agentEnvFromProcess() []string {
-  mode, err := resolveAuthMode(os.Getenv("FORGE_AUTH_MODE"))
+  mode, err := resolveAuthMode(os.Getenv("MC_AUTH_MODE"))
   if err != nil {
     mode = authModeAPIKey
   }
@@ -1004,10 +1000,10 @@ func runShellCommand(command string) (string, error) {
 }
 
 const (
-  telemetryDir   = ".forge/telemetry"
+  telemetryDir   = ".makercycle/telemetry"
   runsCSVPath    = telemetryDir + "/runs.csv"
   eventsCSVPath  = telemetryDir + "/events.csv"
-  noDemandMarker = "(via .forge/state/PLAN.md)"
+  noDemandMarker = "(via .makercycle/state/PLAN.md)"
 )
 
 var (
@@ -1045,8 +1041,8 @@ func appendCSVRecord(path string, header, record []string) error {
   return f.Close()
 }
 
-// recordRunTelemetry registra em .forge/telemetry/runs.csv o consolidado de uma execução da Forja
-// (uma linha por demanda completa). Falhas de escrita não interrompem a Forja.
+// recordRunTelemetry registra em .makercycle/telemetry/runs.csv o consolidado de uma execução do MakerCycle
+// (uma linha por demanda completa). Falhas de escrita não interrompem o MakerCycle.
 func recordRunTelemetry(runID, stack, demandFile string, maxAttempts, attempts int, tokens TokenStats, status, note string) {
   if demandFile == "" {
     demandFile = noDemandMarker
@@ -1060,10 +1056,9 @@ func recordRunTelemetry(runID, stack, demandFile string, maxAttempts, attempts i
   if err := appendCSVRecord(runsCSVPath, runsCSVHeader, record); err != nil {
     fmt.Printf("[AVISO] Falha ao gravar %s: %v\n", runsCSVPath, err)
   }
-  renderTelemetryMarkdown()
 }
 
-// recordEventTelemetry registra em .forge/telemetry/events.csv uma linha por etapa/agente executado.
+// recordEventTelemetry registra em .makercycle/telemetry/events.csv uma linha por etapa/agente executado.
 // duration é o tempo de execução da etapa, em segundos.
 func recordEventTelemetry(runID, stage, agent, model string, attempt int, tokens TokenStats, duration float64) {
   record := []string{
@@ -1171,8 +1166,8 @@ func finish(code int) {
 }
 
 func reportTokens(a AgentBinding, s TokenStats) {
-  fmt.Printf("[TOKENS %s - %s] %s\n", a.Forge, a.Alias, s.Format())
-  logEvent("TOKENS %s - %s: %s", a.Forge, a.Alias, s.Format())
+  fmt.Printf("[TOKENS %s - %s] %s\n", a.Label, a.Alias, s.Format())
+  logEvent("TOKENS %s - %s: %s", a.Label, a.Alias, s.Format())
 }
 
 // ----------------------------------------------------------------------------
@@ -1222,7 +1217,7 @@ func resolveReferences(refs []string, docsDir string) ([]string, error) {
   return out, nil
 }
 
-// referencesPrompt monta o trecho do prompt do ARCHITECT que aponta para os arquivos de referência.
+// referencesPrompt monta o trecho do prompt do PLANNER que aponta para os arquivos de referência.
 func referencesPrompt(refs []string) string {
   if len(refs) == 0 {
     return ""
@@ -1234,10 +1229,10 @@ func referencesPrompt(refs []string) string {
   return " Material de referência (leia integralmente antes de planejar e respeite-o no PLAN.md e nos testes): " + strings.Join(at, ", ") + "."
 }
 
-// ensureForgeDirs cria .forge/{agents,config,state,telemetry}.
-func ensureForgeDirs() error {
+// ensureMakerCycleDirs cria .makercycle/{agents,config,state,telemetry}.
+func ensureMakerCycleDirs() error {
   for _, sub := range []string{"agents", "config", "state", "telemetry"} {
-    if err := os.MkdirAll(filepath.Join(".forge", sub), 0755); err != nil {
+    if err := os.MkdirAll(filepath.Join(".makercycle", sub), 0755); err != nil {
       return err
     }
   }
@@ -1258,7 +1253,7 @@ func ensureDocsDirs(docsDir string) error {
   return nil
 }
 
-const docsStructureMarker = "## Estrutura de Documentação do forgeloop"
+const docsStructureMarker = "## Estrutura de Documentação do makercycle"
 
 // ensureDocsStructureSection acrescenta ao PROJECT_CONTEXT.md a descrição da estrutura de pastas (idempotente).
 func ensureDocsStructureSection(contextPath, docsDir string) error {
@@ -1272,9 +1267,9 @@ func ensureDocsStructureSection(contextPath, docsDir string) error {
   section := fmt.Sprintf("\n%s\n\n"+
     "- `%s/PROJECT_CONTEXT.md` — contexto do projeto (este arquivo).\n"+
     "- `%s/demands/INDEX.md` — índice das demandas (`| Data | Stack | Demanda | Arquivo | Status |`).\n"+
-    "- `%s/demands/` — um arquivo `AAAA-MM-DD-<slug>.md` por demanda (descrição, blueprint, status, tentativas e tokens).\n"+
+    "- `%s/demands/` — um arquivo `AAAA-MM-DD-<slug>.md` por demanda (descrição, plano, status, tentativas e tokens).\n"+
     "- `%s/references/` — material de referência do projeto (specs, links, artigos).\n"+
-    "- `%s/logs/` — um log completo por execução: `AAAA-MM-DD_HHMMSS-<slug>.log` (com demanda) ou `AAAA-MM-DD_HHMMSS-forge<N>.log` (sem demanda). "+
+    "- `%s/logs/` — um log completo por execução: `AAAA-MM-DD_HHMMSS-<slug>.log` (com demanda) ou `AAAA-MM-DD_HHMMSS-stage<N>.log` (sem demanda). "+
     "Cada demanda aponta para o seu log no campo **Log de Execução**.\n",
     docsStructureMarker, docsDir, docsDir, docsDir, docsDir, docsDir)
   sep := ""
@@ -1357,7 +1352,7 @@ func logBlock(title, content string) {
 }
 
 func describeBinding(a AgentBinding) string {
-  return fmt.Sprintf("%s (%s) bin=%q modelo=%q skill=%q args=%q", a.Forge, a.Alias, a.Bin, a.Model, a.Skill, a.Args)
+  return fmt.Sprintf("%s (%s) bin=%q modelo=%q skill=%q args=%q", a.Label, a.Alias, a.Bin, a.Model, a.Skill, a.Args)
 }
 
 func buildRunHeader(stack StackConfig, agents []AgentBinding, task, demandFile string, startStage, maxAttempts int, docsDir string) string {
@@ -1440,18 +1435,11 @@ func withSpinnerTo(w io.Writer, tty bool, label string, fn func()) {
 }
 
 // ----------------------------------------------------------------------------
-// Etapa inicial (-stage / -forge)
+// Etapa inicial (-stage)
 // ----------------------------------------------------------------------------
 
-// resolveStage consolida -stage (principal) e -forge (alias de compatibilidade).
-func resolveStage(stage, forge int, stageSet, forgeSet bool) (int, error) {
-  if stageSet && forgeSet && stage != forge {
-    return 0, fmt.Errorf("-stage (%d) e -forge (%d) divergem; use apenas -stage", stage, forge)
-  }
-  v := stage
-  if !stageSet && forgeSet {
-    v = forge
-  }
+// resolveStage valida a Etapa inicial informada em -stage (1 a 5).
+func resolveStage(v int) (int, error) {
   if v < 1 || v > 5 {
     return 0, fmt.Errorf("etapa inicial inválida: %d (use 1 a 5)", v)
   }
@@ -1484,9 +1472,9 @@ func checkBinaries(names []string, lookPath func(string) (string, error)) []BinS
   return res
 }
 
-var skillEnvRe = regexp.MustCompile(`^FORGE_[A-Z0-9]+_SKILL$`)
+var skillEnvRe = regexp.MustCompile(`^MC_[A-Z0-9]+_SKILL$`)
 
-// collectConfiguredSkills retorna as skills únicas (ordenadas) definidas em variáveis FORGE_*_SKILL.
+// collectConfiguredSkills retorna as skills únicas (ordenadas) definidas em variáveis MC_*_SKILL.
 func collectConfiguredSkills(environ []string) []string {
   seen := map[string]bool{}
   var skills []string
@@ -1622,15 +1610,15 @@ func skillInstallArgs(skill string) []string {
 }
 
 // stageSkills devolve as skills realmente necessárias a partir da etapa inicial.
-func stageSkills(startStage int, architect, skeptic, sentinel AgentBinding) []string {
+func stageSkills(startStage int, planner, critic, auditor AgentBinding) []string {
   var list []string
   if startStage <= 1 {
-    list = append(list, architect.Skill)
+    list = append(list, planner.Skill)
   }
   if startStage <= 2 {
-    list = append(list, skeptic.Skill)
+    list = append(list, critic.Skill)
   }
-  list = append(list, sentinel.Skill)
+  list = append(list, auditor.Skill)
   seen := map[string]bool{}
   var out []string
   for _, sk := range list {
@@ -1660,26 +1648,26 @@ func preflightSkills(skills []string) {
   if len(missing) == 0 {
     return
   }
-  msg := fmt.Sprintf("Skills configuradas e não instaladas: %s. Rode `./forgeloop -init` para instalá-las.", strings.Join(missing, ", "))
+  msg := fmt.Sprintf("Skills configuradas e não instaladas: %s. Rode `./makercycle -init` para instalá-las.", strings.Join(missing, ", "))
   fmt.Printf("\n[AVISO] %s\n", msg)
   logEvent("AVISO (pre-flight): %s", msg)
 }
 
 func runInit(docsDir string, agents []AgentBinding, forceSkills bool) {
-  printBanner("FORGELOOP -init: AMBIENTE E SKILLS", "Binários, skills (npx skills add) e estrutura de pastas")
+  printBanner("MAKERCYCLE -init: AMBIENTE E SKILLS", "Binários, skills (npx skills add) e estrutura de pastas")
   code := 0
 
   // (d) Estrutura de pastas e log primeiro, para que tudo abaixo fique registrado.
-  if err := ensureForgeDirs(); err != nil {
-    fatal("Erro ao criar .forge/: %v", err)
+  if err := ensureMakerCycleDirs(); err != nil {
+    fatal("Erro ao criar .makercycle/: %v", err)
   }
   if err := ensureDocsDirs(docsDir); err != nil {
     fatal("Erro ao criar estrutura de pastas em %s: %v", docsDir, err)
   }
   startRunLog(docsDir, "init")
   logBlock("CABEÇALHO DA EXECUÇÃO (-init)", fmt.Sprintf("Data/Hora: %s\nDocs: %s/\nForce skills: %v\n", time.Now().Format(time.RFC3339), docsDir, forceSkills))
-  fmt.Printf("[OK] Pastas prontas: .forge/{agents,config,state}/, %s/demands/, %s/logs/, %s/references/\n", docsDir, docsDir, docsDir)
-  logEvent("Pastas prontas: .forge/{agents,config,state}/, %s/demands/, %s/logs/, %s/references/", docsDir, docsDir, docsDir)
+  fmt.Printf("[OK] Pastas prontas: .makercycle/{agents,config,state}/, %s/demands/, %s/logs/, %s/references/\n", docsDir, docsDir, docsDir)
+  logEvent("Pastas prontas: .makercycle/{agents,config,state}/, %s/demands/, %s/logs/, %s/references/", docsDir, docsDir, docsDir)
 
   // (a) Binários
   names := []string{}
@@ -1744,18 +1732,18 @@ func runInit(docsDir string, agents []AgentBinding, forceSkills bool) {
   }
 
   if code == 0 {
-    printBanner("-init CONCLUÍDO", "Ambiente pronto. Use ./forgeloop -setup (projeto existente) ou ./forgeloop -task \"...\".")
+    printBanner("-init CONCLUÍDO", "Ambiente pronto. Use ./makercycle -setup (projeto existente) ou ./makercycle -task \"...\".")
   } else {
-    printBanner("-init CONCLUÍDO COM PENDÊNCIAS", "Há binários ausentes ou skills com falha. Corrija e rode ./forgeloop -init novamente.")
+    printBanner("-init CONCLUÍDO COM PENDÊNCIAS", "Há binários ausentes ou skills com falha. Corrija e rode ./makercycle -init novamente.")
   }
   finish(code)
 }
 
-// skillEnvFrom monta pares FORGE_n_SKILL=valor para reaproveitar collectConfiguredSkills (deduplicação/ordem).
+// skillEnvFrom monta pares MC_n_SKILL=valor para reaproveitar collectConfiguredSkills (deduplicação/ordem).
 func skillEnvFrom(skills []string) []string {
   env := make([]string, 0, len(skills))
   for i, sk := range skills {
-    env = append(env, fmt.Sprintf("FORGE_%d_SKILL=%s", i, sk))
+    env = append(env, fmt.Sprintf("MC_%d_SKILL=%s", i, sk))
   }
   return env
 }

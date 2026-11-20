@@ -223,11 +223,11 @@ func writeEnv(t *testing.T, content string) string {
 }
 
 func TestLoadProjectStackHappyPath(t *testing.T) {
-	p := writeEnv(t, "FORGE_DOCS_DIR=docs\n"+
-		"FORGE_STACK_NAME=\"NestJS + Jest\"\n"+
-		"FORGE_TEST_CMD=\"npm run test\"\n"+
-		"FORGE_TYPE_CMD=\"npx tsc --noEmit\"\n"+
-		"FORGE_LINT_CMD=\"npm run lint\"\n")
+	p := writeEnv(t, "MC_DOCS_DIR=docs\n"+
+		"MC_STACK_NAME=\"NestJS + Jest\"\n"+
+		"MC_TEST_CMD=\"npm run test\"\n"+
+		"MC_TYPE_CMD=\"npx tsc --noEmit\"\n"+
+		"MC_LINT_CMD=\"npm run lint\"\n")
 	got, err := loadProjectStack(p)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -237,9 +237,9 @@ func TestLoadProjectStackHappyPath(t *testing.T) {
 
 func TestLoadProjectStackQuotesCommentsAndCRLF(t *testing.T) {
 	p := writeEnv(t, "# gerado pelo -setup\r\n\r\n"+
-		"FORGE_STACK_NAME='Go'\r\n"+
-		"  FORGE_TEST_CMD = go test ./...  \r\n"+
-		"FORGE_LINT_CMD=\r\n")
+		"MC_STACK_NAME='Go'\r\n"+
+		"  MC_TEST_CMD = go test ./...  \r\n"+
+		"MC_LINT_CMD=\r\n")
 	got, err := loadProjectStack(p)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -248,7 +248,7 @@ func TestLoadProjectStackQuotesCommentsAndCRLF(t *testing.T) {
 }
 
 func TestLoadProjectStackOptionalKeysAbsent(t *testing.T) {
-	p := writeEnv(t, "FORGE_STACK_NAME=Python\nFORGE_TEST_CMD=pytest\n")
+	p := writeEnv(t, "MC_STACK_NAME=Python\nMC_TEST_CMD=pytest\n")
 	got, err := loadProjectStack(p)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -257,7 +257,7 @@ func TestLoadProjectStackOptionalKeysAbsent(t *testing.T) {
 }
 
 func TestLoadProjectStackValueWithEquals(t *testing.T) {
-	p := writeEnv(t, "FORGE_STACK_NAME=Go\nFORGE_TEST_CMD=\"go test -run=TestX ./...\"\n")
+	p := writeEnv(t, "MC_STACK_NAME=Go\nMC_TEST_CMD=\"go test -run=TestX ./...\"\n")
 	got, err := loadProjectStack(p)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -268,7 +268,7 @@ func TestLoadProjectStackValueWithEquals(t *testing.T) {
 }
 
 func TestLoadProjectStackDuplicateKeyLastWins(t *testing.T) {
-	p := writeEnv(t, "FORGE_STACK_NAME=Antigo\nFORGE_TEST_CMD=a\nFORGE_STACK_NAME=Novo\n")
+	p := writeEnv(t, "MC_STACK_NAME=Antigo\nMC_TEST_CMD=a\nMC_STACK_NAME=Novo\n")
 	got, err := loadProjectStack(p)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -279,7 +279,7 @@ func TestLoadProjectStackDuplicateKeyLastWins(t *testing.T) {
 }
 
 func TestLoadProjectStackMalformedLinesIgnored(t *testing.T) {
-	p := writeEnv(t, "lixo sem igual\nFORGE_STACK_NAME=Go\n===\nFORGE_TEST_CMD=go test ./...\n")
+	p := writeEnv(t, "lixo sem igual\nMC_STACK_NAME=Go\n===\nMC_TEST_CMD=go test ./...\n")
 	got, err := loadProjectStack(p)
 	if err != nil {
 		t.Fatalf("linhas sem chave válida devem ser ignoradas: %v", err)
@@ -302,10 +302,10 @@ func TestLoadProjectStackPathIsDirectory(t *testing.T) {
 
 func TestLoadProjectStackIncomplete(t *testing.T) {
 	cases := map[string]string{
-		"sem nome":           "FORGE_DOCS_DIR=docs\nFORGE_TEST_CMD=go test ./...\n",
-		"sem teste":          "FORGE_STACK_NAME=Go\n",
-		"teste vazio":        "FORGE_STACK_NAME=Go\nFORGE_TEST_CMD=\"\"\n",
-		"nome só com espaço": "FORGE_STACK_NAME=\"   \"\nFORGE_TEST_CMD=x\n",
+		"sem nome":           "MC_DOCS_DIR=docs\nMC_TEST_CMD=go test ./...\n",
+		"sem teste":          "MC_STACK_NAME=Go\n",
+		"teste vazio":        "MC_STACK_NAME=Go\nMC_TEST_CMD=\"\"\n",
+		"nome só com espaço": "MC_STACK_NAME=\"   \"\nMC_TEST_CMD=x\n",
 		"arquivo vazio":      "",
 		"só lixo":            "%%%\n???\n",
 	}
@@ -322,7 +322,7 @@ func TestLoadProjectStackIncomplete(t *testing.T) {
 
 func TestErrProjectStackIncompleteMentionsKeys(t *testing.T) {
 	msg := errProjectStackIncomplete.Error()
-	if !strings.Contains(msg, "FORGE_STACK_NAME") || !strings.Contains(msg, "FORGE_TEST_CMD") {
+	if !strings.Contains(msg, "MC_STACK_NAME") || !strings.Contains(msg, "MC_TEST_CMD") {
 		t.Fatalf("mensagem deve citar as chaves obrigatórias: %q", msg)
 	}
 }

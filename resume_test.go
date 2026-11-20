@@ -8,18 +8,18 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Task 5 — resolveStage aceita 1..5 (ver também TestResolveStage em forgeloop_test.go)
+// Task 5 — resolveStage aceita 1..5 (ver também TestResolveStage em makercycle_test.go)
 // ---------------------------------------------------------------------------
 
 func TestResolveStageAcceptsOneToFive(t *testing.T) {
 	for v := 1; v <= 5; v++ {
-		got, err := resolveStage(v, 1, true, false)
+		got, err := resolveStage(v)
 		if err != nil || got != v {
 			t.Fatalf("RS-H%d: resolveStage(%d) = %d, %v", v, v, got, err)
 		}
 	}
 	for _, v := range []int{0, 6, -1} {
-		if _, err := resolveStage(v, 1, true, false); err == nil {
+		if _, err := resolveStage(v); err == nil {
 			t.Fatalf("RS-X: etapa %d deveria ser rejeitada", v)
 		} else if !strings.Contains(err.Error(), "1 a 5") {
 			t.Fatalf("mensagem deve orientar \"1 a 5\": %v", err)
@@ -39,9 +39,9 @@ func TestShouldRunStage(t *testing.T) {
 	}{
 		{"SR-H1", 1, 1, 1, 1, true},
 		{"SR-H2", 3, 1, 1, 1, true},
-		{"SR-H3", 3, 4, 1, 1, false}, // retomada na Etapa 4: pula BUILDER na 1ª rodada
+		{"SR-H3", 3, 4, 1, 1, false}, // retomada na Etapa 4: pula MAKER na 1ª rodada
 		{"SR-H4", 4, 4, 1, 1, true},
-		{"SR-H5", 4, 5, 2, 2, false}, // retomada na Etapa 5 (tentativa 2): pula SENTINEL
+		{"SR-H5", 4, 5, 2, 2, false}, // retomada na Etapa 5 (tentativa 2): pula AUDITOR
 		{"SR-H6", 5, 5, 2, 2, true},
 		{"SR-E1", 3, 4, 2, 1, true}, // rodadas seguintes executam tudo
 		{"SR-E2", 4, 5, 3, 2, true},
@@ -70,8 +70,8 @@ func TestResumeStateRoundTrip(t *testing.T) {
 		t.Fatalf("writeResumeState: %v", err)
 	}
 	c := readRepoFile(t, p)
-	for _, s := range []string{`FORGE_RESUME_STAGE="4"`, `FORGE_RESUME_DEMAND="docs/demands/2026-11-17-x.md"`,
-		`FORGE_RESUME_STACK="Go"`, `FORGE_RESUME_ATTEMPT="2"`} {
+	for _, s := range []string{`MC_RESUME_STAGE="4"`, `MC_RESUME_DEMAND="docs/demands/2026-11-17-x.md"`,
+		`MC_RESUME_STACK="Go"`, `MC_RESUME_ATTEMPT="2"`} {
 		if !strings.Contains(c, s) {
 			t.Fatalf("RESUME.env sem %q:\n%s", s, c)
 		}
@@ -83,7 +83,7 @@ func TestResumeStateRoundTrip(t *testing.T) {
 }
 
 func TestResumeStatePathConstant(t *testing.T) {
-	if resumeEnvPath != ".forge/state/RESUME.env" {
+	if resumeEnvPath != ".makercycle/state/RESUME.env" {
 		t.Fatalf("resumeEnvPath = %q", resumeEnvPath)
 	}
 }
@@ -96,7 +96,7 @@ func TestWriteResumeStateOverwritesPrevious(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := readRepoFile(t, p)
-	if strings.Count(c, "FORGE_RESUME_STAGE=") != 1 || !strings.Contains(c, `FORGE_RESUME_STAGE="5"`) {
+	if strings.Count(c, "MC_RESUME_STAGE=") != 1 || !strings.Contains(c, `MC_RESUME_STAGE="5"`) {
 		t.Fatalf("chave duplicada ou não atualizada:\n%s", c)
 	}
 }
@@ -107,7 +107,7 @@ func TestWriteResumeStateRejectsInvalid(t *testing.T) {
 		"RE-X1 etapa 0":          {Stage: 0, Stack: "Go", Attempt: 1},
 		"RE-X2 etapa 6":          {Stage: 6, Stack: "Go", Attempt: 1},
 		"RE-X3 aspas na demanda": {Stage: 3, Demand: `docs/x".md`, Stack: "Go", Attempt: 1},
-		"RE-X4 newline na stack": {Stage: 3, Stack: "Go\nFORGE_X=1", Attempt: 1},
+		"RE-X4 newline na stack": {Stage: 3, Stack: "Go\nMC_X=1", Attempt: 1},
 		"RE-X5 tentativa 0":      {Stage: 3, Stack: "Go", Attempt: 0},
 	}
 	for name, st := range cases {
@@ -131,10 +131,10 @@ func TestLoadResumeStateErrors(t *testing.T) {
 		t.Fatalf("RE-X6: erro deve sugerir -stage/-demand: %v", err)
 	}
 	bad := map[string]string{
-		"RE-X7 etapa inválida":     "FORGE_RESUME_STAGE=\"9\"\nFORGE_RESUME_STACK=\"Go\"\n",
-		"RE-X8 etapa não numérica": "FORGE_RESUME_STAGE=\"abc\"\nFORGE_RESUME_STACK=\"Go\"\n",
-		"RE-X9 tentativa inválida": "FORGE_RESUME_STAGE=\"3\"\nFORGE_RESUME_STACK=\"Go\"\nFORGE_RESUME_ATTEMPT=\"x\"\n",
-		"RE-X10 sem etapa":         "FORGE_RESUME_STACK=\"Go\"\n",
+		"RE-X7 etapa inválida":     "MC_RESUME_STAGE=\"9\"\nMC_RESUME_STACK=\"Go\"\n",
+		"RE-X8 etapa não numérica": "MC_RESUME_STAGE=\"abc\"\nMC_RESUME_STACK=\"Go\"\n",
+		"RE-X9 tentativa inválida": "MC_RESUME_STAGE=\"3\"\nMC_RESUME_STACK=\"Go\"\nMC_RESUME_ATTEMPT=\"x\"\n",
+		"RE-X10 sem etapa":         "MC_RESUME_STACK=\"Go\"\n",
 	}
 	for name, content := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -148,9 +148,9 @@ func TestLoadResumeStateErrors(t *testing.T) {
 }
 
 func TestLoadResumeStateDefaultsAttempt(t *testing.T) {
-	// RE-E2: FORGE_RESUME_ATTEMPT ausente => 1.
+	// RE-E2: MC_RESUME_ATTEMPT ausente => 1.
 	p := filepath.Join(t.TempDir(), "RESUME.env")
-	_ = os.WriteFile(p, []byte("FORGE_RESUME_STAGE=\"2\"\nFORGE_RESUME_STACK=\"Go\"\n"), 0o644)
+	_ = os.WriteFile(p, []byte("MC_RESUME_STAGE=\"2\"\nMC_RESUME_STACK=\"Go\"\n"), 0o644)
 	got, err := loadResumeState(p)
 	if err != nil || got != (ResumeState{Stage: 2, Stack: "Go", Attempt: 1}) {
 		t.Fatalf("got %+v, %v", got, err)
@@ -177,7 +177,7 @@ func TestClearResumeState(t *testing.T) {
 
 func TestResumeStack(t *testing.T) {
 	root := t.TempDir()
-	envPath := writeEnv(t, "FORGE_STACK_NAME=\"NestJS + Jest\"\nFORGE_TEST_CMD=\"npm run test\"\nFORGE_LINT_CMD=\"npm run lint\"\n")
+	envPath := writeEnv(t, "MC_STACK_NAME=\"NestJS + Jest\"\nMC_TEST_CMD=\"npm run test\"\nMC_LINT_CMD=\"npm run lint\"\n")
 	got, err := resumeStack("NestJS + Jest", envPath, root)
 	if err != nil {
 		t.Fatalf("RK-H1: %v", err)
@@ -301,14 +301,14 @@ func TestValidateRunFlags(t *testing.T) {
 func TestQuotaInterruptionReport(t *testing.T) {
 	st := ResumeState{Stage: 3, Demand: "docs/demands/2026-11-17-x.md", Stack: "Go", Attempt: 2}
 	eta := "45m10s (liberação prevista em 17/11/2026 às 22:45)"
-	got := quotaInterruptionReport(st, "ETAPA 3: STRIKE", eta)
+	got := quotaInterruptionReport(st, "ETAPA 3: MAKE", eta)
 	for _, s := range []string{
-		"Etapa interrompida: ETAPA 3: STRIKE",
+		"Etapa interrompida: ETAPA 3: MAKE",
 		"Tentativa atual: 2",
 		"Motivo: bloqueio por limite de tokens/cota",
 		"Tempo para continuar: " + eta,
-		"./forgeloop -resume",
-		"./forgeloop -stage 3 -demand docs/demands/2026-11-17-x.md",
+		"./makercycle -resume",
+		"./makercycle -stage 3 -demand docs/demands/2026-11-17-x.md",
 	} {
 		if !strings.Contains(got, s) {
 			t.Fatalf("QR-H1: relatório sem %q:\n%s", s, got)
@@ -318,8 +318,8 @@ func TestQuotaInterruptionReport(t *testing.T) {
 
 func TestQuotaInterruptionReportWithoutDemand(t *testing.T) {
 	// QR-E1: sem demanda vinculada => comando sem -demand.
-	got := quotaInterruptionReport(ResumeState{Stage: 5, Stack: "Go", Attempt: 1}, "ETAPA 5: ASSAY", "tempo de reset não informado pelo provedor")
-	if !strings.Contains(got, "./forgeloop -stage 5") || strings.Contains(got, "-demand") {
+	got := quotaInterruptionReport(ResumeState{Stage: 5, Stack: "Go", Attempt: 1}, "ETAPA 5: GATE", "tempo de reset não informado pelo provedor")
+	if !strings.Contains(got, "./makercycle -stage 5") || strings.Contains(got, "-demand") {
 		t.Fatalf("relatório inesperado:\n%s", got)
 	}
 	if !strings.Contains(got, "tempo de reset não informado pelo provedor") {

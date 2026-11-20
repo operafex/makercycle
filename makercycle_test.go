@@ -13,7 +13,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// slugify — Task 1 (ver .forge/state/PLAN.md / .forge/state/TEST_CASES.md: S-*)
+// slugify — Task 1 (ver .makercycle/state/PLAN.md / .makercycle/state/TEST_CASES.md: S-*)
 // ---------------------------------------------------------------------------
 
 func TestSlugify(t *testing.T) {
@@ -581,7 +581,7 @@ func TestEnsureDocsStructureSection(t *testing.T) {
 func TestWithSpinnerTTY(t *testing.T) {
   var buf bytes.Buffer
   ran := false
-  withSpinnerTo(&buf, true, "ETAPA 1: BLUEPRINT — ARCHITECT | opus", func() {
+  withSpinnerTo(&buf, true, "ETAPA 1: PLAN — PLANNER | opus", func() {
     ran = true
     time.Sleep(250 * time.Millisecond)
   })
@@ -589,7 +589,7 @@ func TestWithSpinnerTTY(t *testing.T) {
   if !ran {
     t.Fatal("fn não executou")
   }
-  if !strings.Contains(out, "[ETAPA 1: BLUEPRINT — ARCHITECT | opus] Processando... (00:0") {
+  if !strings.Contains(out, "[ETAPA 1: PLAN — PLANNER | opus] Processando... (00:0") {
     t.Errorf("linha do spinner ausente: %q", out)
   }
   if !strings.Contains(out, "\r\033[K") || !strings.HasSuffix(out, "\r\033[K") {
@@ -633,8 +633,8 @@ func TestFormatElapsed(t *testing.T) {
 }
 
 func TestAgentLabelAndHeader(t *testing.T) {
-  a := AgentBinding{Forge: "ETAPA 1", Stage: "BLUEPRINT", Alias: "ARCHITECT", Bin: "claude", Model: "opus", Skill: "superpowers"}
-  if got := agentLabel(a); got != "ETAPA 1: BLUEPRINT — ARCHITECT | opus" {
+  a := AgentBinding{Label: "ETAPA 1", Stage: "PLAN", Alias: "PLANNER", Bin: "claude", Model: "opus", Skill: "superpowers"}
+  if got := agentLabel(a); got != "ETAPA 1: PLAN — PLANNER | opus" {
     t.Errorf("label = %q", got)
   }
   h := buildRunHeader(StackConfig{Name: "Go", TestCmd: "go test ./..."}, []AgentBinding{a}, "", "", 1, 3, "docs")
@@ -647,7 +647,7 @@ func TestAgentLabelAndHeader(t *testing.T) {
 
 func TestRunAgentLogsPromptAndFullResponse(t *testing.T) {
   dir := filepath.Join(t.TempDir(), "docs")
-  l, err := initRunLog(dir, "forge3")
+  l, err := initRunLog(dir, "stage3")
   if err != nil {
     t.Fatal(err)
   }
@@ -656,7 +656,7 @@ func TestRunAgentLogsPromptAndFullResponse(t *testing.T) {
   defer func() { runLog = prev }()
 
   // "echo" faz o papel do binário do agente: devolve os argumentos (inclui o prompt) como resposta.
-  a := AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Bin: "echo", Model: "m1"}
+  a := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: "echo", Model: "m1"}
   stats, err := runAgent(a, "PROMPT-UNICO-123", false)
   l.Close()
   if err != nil || stats.Total <= 0 {
@@ -664,7 +664,7 @@ func TestRunAgentLogsPromptAndFullResponse(t *testing.T) {
   }
   b, _ := os.ReadFile(filepath.Join(dir, "logs", l.Name))
   got := string(b)
-  for _, want := range []string{"PROMPT ENVIADO — ETAPA 3: STRIKE — BUILDER | m1", "RESPOSTA RECEBIDA", "--model m1 -p PROMPT-UNICO-123", "concluído em"} {
+  for _, want := range []string{"PROMPT ENVIADO — ETAPA 3: MAKE — MAKER | m1", "RESPOSTA RECEBIDA", "--model m1 -p PROMPT-UNICO-123", "concluído em"} {
     if !strings.Contains(got, want) {
       t.Errorf("log sem %q:\n%s", want, got)
     }
@@ -676,14 +676,14 @@ func TestRunAgentLogsPromptAndFullResponse(t *testing.T) {
 
 func TestCollectConfiguredSkills(t *testing.T) {
   env := []string{
-    "FORGE_ARCHITECT_SKILL=obra/superpowers",
-    "FORGE_SKEPTIC_SKILL=google/elephant-goldfish-model",
-    "FORGE_SENTINEL_SKILL=cloudflare/security-audit-skill",
-    "FORGE_OTHER_SKILL=obra/superpowers", // duplicada
-    "FORGE_BUILDER_SKILL=  ",             // vazia
-    "FORGE_BUILDER_MODEL=Gemini",         // não é skill
+    "MC_PLANNER_SKILL=obra/superpowers",
+    "MC_CRITIC_SKILL=google/elephant-goldfish-model",
+    "MC_AUDITOR_SKILL=cloudflare/security-audit-skill",
+    "MC_OTHER_SKILL=obra/superpowers", // duplicada
+    "MC_MAKER_SKILL=  ",             // vazia
+    "MC_MAKER_MODEL=Gemini",         // não é skill
     "SKILL=x",
-    "FORGE_SKILL_EXTRA=y",
+    "MC_SKILL_EXTRA=y",
     "PATH=/usr/bin",
   }
   got := collectConfiguredSkills(env)
@@ -847,24 +847,19 @@ func TestStageSkills(t *testing.T) {
 
 func TestResolveStage(t *testing.T) {
   cases := []struct {
-    stage, forge     int
-    stageSet, forgeSet bool
-    want             int
-    wantErr          bool
+    stage   int
+    want    int
+    wantErr bool
   }{
-    {1, 1, false, false, 1, false},
-    {3, 1, true, false, 3, false},
-    {1, 2, false, true, 2, false}, // alias -forge
-    {2, 2, true, true, 2, false},
-    {2, 3, true, true, 0, true}, // divergentes
-    {4, 1, true, false, 4, false}, // retomada na Etapa 4 (SENTINEL)
-    {5, 1, true, false, 5, false}, // retomada na Etapa 5 (ARBITER)
-    {1, 5, false, true, 5, false}, // alias -forge também aceita 1..5
-    {6, 1, true, false, 0, true},
-    {1, 0, false, true, 0, true},
+    {1, 1, false},
+    {3, 3, false},
+    {4, 4, false}, // retomada na Etapa 4 (AUDITOR)
+    {5, 5, false}, // retomada na Etapa 5 (GATEKEEPER)
+    {6, 0, true},
+    {0, 0, true},
   }
   for _, c := range cases {
-    got, err := resolveStage(c.stage, c.forge, c.stageSet, c.forgeSet)
+    got, err := resolveStage(c.stage)
     if (err != nil) != c.wantErr || (!c.wantErr && got != c.want) {
       t.Errorf("resolveStage(%+v) = %d, %v", c, got, err)
     }
@@ -883,14 +878,14 @@ func TestPreflightSkillsWarnsAndLogs(t *testing.T) {
   preflightSkills([]string{"zzz/skill-que-nao-existe-xyz"})
   l.Close()
   b, _ := os.ReadFile(filepath.Join(dir, "logs", l.Name))
-  if !strings.Contains(string(b), "./forgeloop -init") || !strings.Contains(string(b), "zzz/skill-que-nao-existe-xyz") {
+  if !strings.Contains(string(b), "./makercycle -init") || !strings.Contains(string(b), "zzz/skill-que-nao-existe-xyz") {
     t.Errorf("aviso não registrado:\n%s", b)
   }
 }
 
 func TestAgentLabelUsesEtapa(t *testing.T) {
-  a := AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Model: "m"}
-  if got := agentLabel(a); got != "ETAPA 3: STRIKE — BUILDER | m" {
+  a := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Model: "m"}
+  if got := agentLabel(a); got != "ETAPA 3: MAKE — MAKER | m" {
     t.Errorf("label = %q", got)
   }
 }
@@ -979,14 +974,14 @@ func TestEnsureDocsDirsCreatesReferencesWithGitkeep(t *testing.T) {
   }
 }
 
-func TestEnsureForgeDirs(t *testing.T) {
+func TestEnsureMakerCycleDirs(t *testing.T) {
   chdirTemp(t)
-  if err := ensureForgeDirs(); err != nil {
+  if err := ensureMakerCycleDirs(); err != nil {
     t.Fatal(err)
   }
   for _, sub := range []string{"agents", "config", "state", "telemetry"} {
-    if info, err := os.Stat(filepath.Join(".forge", sub)); err != nil || !info.IsDir() {
-      t.Errorf(".forge/%s ausente: %v", sub, err)
+    if info, err := os.Stat(filepath.Join(".makercycle", sub)); err != nil || !info.IsDir() {
+      t.Errorf(".makercycle/%s ausente: %v", sub, err)
     }
   }
 }
@@ -1024,7 +1019,7 @@ func TestRecordRunTelemetryCreatesCSVWithHeaderAndRow(t *testing.T) {
   recordRunTelemetry("123", "Go", "docs/demands/a.md", 3, 2, TokenStats{Input: 10, Output: 5, Total: 15}, "APPROVED", "ok")
   recordRunTelemetry("456", "Go", "", 3, 3, TokenStats{Input: 1, Output: 2, Total: 3}, "CIRCUIT_BREAKER_TRIPPED", "limite")
 
-  rows := readCSV(t, filepath.Join(".forge", "telemetry", "runs.csv"))
+  rows := readCSV(t, filepath.Join(".makercycle", "telemetry", "runs.csv"))
   wantHeader := "RunID,Timestamp,Stack,DemandFile,MaxAttempts,TotalAttempts,TotalTokensIn,TotalTokensOut,TotalTokens,FinalStatus,Note"
   if len(rows) != 3 {
     t.Fatalf("esperava cabeçalho + 2 linhas, got %d: %v", len(rows), rows)
@@ -1044,17 +1039,17 @@ func TestRecordRunTelemetryCreatesCSVWithHeaderAndRow(t *testing.T) {
       t.Errorf("coluna %s = %q; want %q", rows[0][i], rows[1][i], w)
     }
   }
-  if rows[2][3] != "(via .forge/state/PLAN.md)" {
+  if rows[2][3] != "(via .makercycle/state/PLAN.md)" {
     t.Errorf("demanda vazia deveria usar o marcador: %q", rows[2][3])
   }
 }
 
 func TestRecordEventTelemetryCreatesCSVWithHeaderAndRow(t *testing.T) {
   chdirTemp(t)
-  recordEventTelemetry("123", "F3", "BUILDER", "Gemini 3.8 Flash (High)", 2, TokenStats{Input: 7, Output: 3, Total: 10}, 12.3456)
-  recordEventTelemetry("123", "F5", "ARBITER", "m", 2, TokenStats{}, 0.5)
+  recordEventTelemetry("123", "S3", "MAKER", "Gemini 3.8 Flash (High)", 2, TokenStats{Input: 7, Output: 3, Total: 10}, 12.3456)
+  recordEventTelemetry("123", "S5", "GATEKEEPER", "m", 2, TokenStats{}, 0.5)
 
-  rows := readCSV(t, filepath.Join(".forge", "telemetry", "events.csv"))
+  rows := readCSV(t, filepath.Join(".makercycle", "telemetry", "events.csv"))
   wantHeader := "RunID,Timestamp,Stage,Agent,Model,Attempt,TokensIn,TokensOut,TotalTokens,DurationSeconds"
   if len(rows) != 3 {
     t.Fatalf("esperava cabeçalho + 2 linhas, got %d: %v", len(rows), rows)
@@ -1063,7 +1058,7 @@ func TestRecordEventTelemetryCreatesCSVWithHeaderAndRow(t *testing.T) {
     t.Errorf("cabeçalho = %q; want %q", got, wantHeader)
   }
   r := rows[1]
-  for i, w := range map[int]string{0: "123", 2: "F3", 3: "BUILDER", 4: "Gemini 3.8 Flash (High)", 5: "2", 6: "7", 7: "3", 8: "10", 9: "12.346"} {
+  for i, w := range map[int]string{0: "123", 2: "S3", 3: "MAKER", 4: "Gemini 3.8 Flash (High)", 5: "2", 6: "7", 7: "3", 8: "10", 9: "12.346"} {
     if r[i] != w {
       t.Errorf("coluna %s = %q; want %q", rows[0][i], r[i], w)
     }
@@ -1079,7 +1074,7 @@ func TestTelemetryCSVEscapesSpecialCharsAndKeepsSingleHeader(t *testing.T) {
   for i := 0; i < 3; i++ {
     recordRunTelemetry("1", "Go,Lang", "d.md", 3, 1, TokenStats{Total: 1}, "APPROVED", note)
   }
-  rows := readCSV(t, filepath.Join(".forge", "telemetry", "runs.csv"))
+  rows := readCSV(t, filepath.Join(".makercycle", "telemetry", "runs.csv"))
   if len(rows) != 4 {
     t.Fatalf("esperava 1 cabeçalho + 3 linhas, got %d", len(rows))
   }
@@ -1095,14 +1090,14 @@ func TestTelemetryCSVEscapesSpecialCharsAndKeepsSingleHeader(t *testing.T) {
 
 func TestTelemetryCSVAppendsToExistingFileWithoutRewritingHeader(t *testing.T) {
   chdirTemp(t)
-  if err := os.MkdirAll(filepath.Join(".forge", "telemetry"), 0755); err != nil {
+  if err := os.MkdirAll(filepath.Join(".makercycle", "telemetry"), 0755); err != nil {
     t.Fatal(err)
   }
-  path := filepath.Join(".forge", "telemetry", "events.csv")
+  path := filepath.Join(".makercycle", "telemetry", "events.csv")
   if err := os.WriteFile(path, []byte(strings.Join(eventsCSVHeader, ",")+"\n"+"0,t,F1,A,m,1,1,1,2,0.1\n"), 0644); err != nil {
     t.Fatal(err)
   }
-  recordEventTelemetry("9", "F2", "SKEPTIC", "m", 1, TokenStats{Total: 1}, 1)
+  recordEventTelemetry("9", "S2", "CRITIC", "m", 1, TokenStats{Total: 1}, 1)
   rows := readCSV(t, path)
   if len(rows) != 3 || rows[2][0] != "9" {
     t.Errorf("append em arquivo existente falhou: %v", rows)
@@ -1121,10 +1116,10 @@ func TestNewRunIDIsNumericAndUnique(t *testing.T) {
 func TestRunAndEventShareRunIDForRelationalJoin(t *testing.T) {
   chdirTemp(t)
   id := newRunID()
-  recordEventTelemetry(id, "F1", "ARCHITECT", "m", 1, TokenStats{Total: 1}, 1)
+  recordEventTelemetry(id, "S1", "PLANNER", "m", 1, TokenStats{Total: 1}, 1)
   recordRunTelemetry(id, "Go", "d.md", 3, 1, TokenStats{Total: 1}, "APPROVED", "ok")
-  runs := readCSV(t, filepath.Join(".forge", "telemetry", "runs.csv"))
-  events := readCSV(t, filepath.Join(".forge", "telemetry", "events.csv"))
+  runs := readCSV(t, filepath.Join(".makercycle", "telemetry", "runs.csv"))
+  events := readCSV(t, filepath.Join(".makercycle", "telemetry", "events.csv"))
   if runs[1][0] != id || events[1][0] != id {
     t.Errorf("RunID divergente: runs=%q events=%q", runs[1][0], events[1][0])
   }

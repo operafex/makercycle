@@ -1,7 +1,7 @@
-# Artefatos transitórios de cada execução da Forge
-.forge/state/
-#.forge/telemetry/
-.forge/config/project.env
+# Artefatos transitórios de cada execução do MakerCycle
+.makercycle/state/
+#.makercycle/telemetry/
+.makercycle/config/project.env
 
 #pastas de configuração
 .agents/
@@ -13,8 +13,8 @@
 skills
 
 # Binário compilado
-/forgeloop
+/makercycle
 
 docs/
-forgeloop
+makercycle
 .DS_Store

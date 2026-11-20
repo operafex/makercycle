@@ -75,8 +75,8 @@ func TestResolveAuthMode(t *testing.T) {
 				if err == nil {
 					t.Fatalf("resolveAuthMode(%q) deveria falhar", c.in)
 				}
-				if !strings.Contains(err.Error(), "FORGE_AUTH_MODE") {
-					t.Fatalf("erro deve citar FORGE_AUTH_MODE: %v", err)
+				if !strings.Contains(err.Error(), "MC_AUTH_MODE") {
+					t.Fatalf("erro deve citar MC_AUTH_MODE: %v", err)
 				}
 				if !strings.Contains(err.Error(), strings.TrimSpace(c.in)) {
 					t.Fatalf("erro deve citar o valor recebido %q: %v", c.in, err)
@@ -112,10 +112,10 @@ func TestLoadOmniRouteConfigDefaults(t *testing.T) {
 func TestLoadOmniRouteConfigOverrides(t *testing.T) {
 	// OR-H2: valores customizados (com espaços) são respeitados.
 	got := loadOmniRouteConfig(fakeGetenv(map[string]string{
-		"FORGE_OMNIROUTE_ENABLED": " TRUE ",
-		"FORGE_OMNIROUTE_URL":     " http://omni:9000 ",
-		"FORGE_OMNIROUTE_API_KEY": "sk-omni",
-		"FORGE_OMNIROUTE_MODEL":   "claude-opus-4-6",
+		"MC_OMNIROUTE_ENABLED": " TRUE ",
+		"MC_OMNIROUTE_URL":     " http://omni:9000 ",
+		"MC_OMNIROUTE_API_KEY": "sk-omni",
+		"MC_OMNIROUTE_MODEL":   "claude-opus-4-6",
 	}))
 	want := OmniRouteConfig{Enabled: true, URL: "http://omni:9000", APIKey: "sk-omni", Model: "claude-opus-4-6"}
 	if got != want {
@@ -126,9 +126,9 @@ func TestLoadOmniRouteConfigOverrides(t *testing.T) {
 func TestLoadOmniRouteConfigEnabledOnlyForTrue(t *testing.T) {
 	// OR-E1: apenas "true" (case-insensitive) ativa o fallback.
 	for _, v := range []string{"false", "1", "yes", "on", "", "truee"} {
-		got := loadOmniRouteConfig(fakeGetenv(map[string]string{"FORGE_OMNIROUTE_ENABLED": v}))
+		got := loadOmniRouteConfig(fakeGetenv(map[string]string{"MC_OMNIROUTE_ENABLED": v}))
 		if got.Enabled {
-			t.Fatalf("FORGE_OMNIROUTE_ENABLED=%q não deveria ativar o OmniRoute", v)
+			t.Fatalf("MC_OMNIROUTE_ENABLED=%q não deveria ativar o OmniRoute", v)
 		}
 	}
 }
@@ -145,16 +145,16 @@ func TestValidateAuthConfig(t *testing.T) {
 		ok   bool
 	}{
 		{"VA-H1", "api_key", map[string]string{"ANTHROPIC_API_KEY": "sk-ant"}, true},
-		{"VA-H2", "api_key", map[string]string{"FORGE_API_KEY": "sk-456"}, true},
+		{"VA-H2", "api_key", map[string]string{"MC_API_KEY": "sk-456"}, true},
 		{"VA-H3", "another", nil, true},
 		{"VA-H4", "api_key", map[string]string{"OPENAI_API_KEY": "sk-oai"}, true},
 		{"VA-H5", "api_key", map[string]string{"GEMINI_API_KEY": "gm-1"}, true},
-		{"VA-E1", "api_key", map[string]string{"FORGE_OMNIROUTE_ENABLED": "true"}, true},
-		{"VA-E2", "api_key", map[string]string{"FORGE_OMNIROUTE_ENABLED": "True"}, true},
+		{"VA-E1", "api_key", map[string]string{"MC_OMNIROUTE_ENABLED": "true"}, true},
+		{"VA-E2", "api_key", map[string]string{"MC_OMNIROUTE_ENABLED": "True"}, true},
 		{"VA-E3", "api_key", map[string]string{"ANTHROPIC_API_KEY": "   "}, false},
 		{"VA-E4", "api_key", map[string]string{"OPENAI_API_KEY": "\"\""}, false},
 		{"VA-X1", "api_key", nil, false},
-		{"VA-X2", "api_key", map[string]string{"FORGE_OMNIROUTE_ENABLED": "false"}, false},
+		{"VA-X2", "api_key", map[string]string{"MC_OMNIROUTE_ENABLED": "false"}, false},
 		{"VA-X3", "api_key", map[string]string{"LLM_API_KEY": "sk-legacy"}, false},
 		{"VA-X4", "bogus", map[string]string{"ANTHROPIC_API_KEY": "sk-123"}, false},
 	}
@@ -177,7 +177,7 @@ func TestValidateAuthConfigMessageGuidesUser(t *testing.T) {
 	if err == nil {
 		t.Fatal("esperado erro sem API key")
 	}
-	for _, s := range []string{".forge/config/project.env", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
+	for _, s := range []string{".makercycle/config/project.env", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
 		if !strings.Contains(err.Error(), s) {
 			t.Fatalf("mensagem deve citar %q: %v", s, err)
 		}
@@ -202,23 +202,23 @@ func TestBuildAgentEnvAPIKeyStripsLegacyLLMKey(t *testing.T) {
 	assertEnvAbsent(t, got, "ANTHROPIC_AUTH_TOKEN")
 }
 
-func TestBuildAgentEnvAPIKeyFallsBackToForgeKey(t *testing.T) {
-	// BE-H2: ANTHROPIC_API_KEY ausente => usa FORGE_API_KEY; nunca recria LLM_API_KEY.
-	got := buildAgentEnv([]string{"FORGE_API_KEY=sk-forge"}, "api_key", testOmni, false)
-	assertEnvSingle(t, got, "ANTHROPIC_API_KEY", "sk-forge")
+func TestBuildAgentEnvAPIKeyFallsBackToMCKey(t *testing.T) {
+	// BE-H2: ANTHROPIC_API_KEY ausente => usa MC_API_KEY; nunca recria LLM_API_KEY.
+	got := buildAgentEnv([]string{"MC_API_KEY=sk-mc"}, "api_key", testOmni, false)
+	assertEnvSingle(t, got, "ANTHROPIC_API_KEY", "sk-mc")
 	assertEnvAbsent(t, got, "LLM_API_KEY")
 }
 
-func TestBuildAgentEnvAPIKeyEmptyLLMUsesForgeKey(t *testing.T) {
-	// BE-E1: LLM_API_KEY vazia é descartada; FORGE_API_KEY alimenta ANTHROPIC_API_KEY, sem duplicar.
-	got := buildAgentEnv([]string{"LLM_API_KEY=  ", "FORGE_API_KEY=sk-forge"}, "api_key", testOmni, false)
+func TestBuildAgentEnvAPIKeyEmptyLLMUsesMCKey(t *testing.T) {
+	// BE-E1: LLM_API_KEY vazia é descartada; MC_API_KEY alimenta ANTHROPIC_API_KEY, sem duplicar.
+	got := buildAgentEnv([]string{"LLM_API_KEY=  ", "MC_API_KEY=sk-mc"}, "api_key", testOmni, false)
 	assertEnvAbsent(t, got, "LLM_API_KEY")
-	assertEnvSingle(t, got, "ANTHROPIC_API_KEY", "sk-forge")
+	assertEnvSingle(t, got, "ANTHROPIC_API_KEY", "sk-mc")
 }
 
-func TestBuildAgentEnvAPIKeyPrefersAnthropicOverForge(t *testing.T) {
+func TestBuildAgentEnvAPIKeyPrefersAnthropicOverMC(t *testing.T) {
 	// BE-E2
-	got := buildAgentEnv([]string{"FORGE_API_KEY=sk-forge", "ANTHROPIC_API_KEY=sk-ant"}, "api_key", testOmni, false)
+	got := buildAgentEnv([]string{"MC_API_KEY=sk-mc", "ANTHROPIC_API_KEY=sk-ant"}, "api_key", testOmni, false)
 	assertEnvSingle(t, got, "ANTHROPIC_API_KEY", "sk-ant")
 }
 
@@ -264,20 +264,20 @@ func TestBuildAgentEnvAPIKeyWithoutAnyKey(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModelsEnvDeclaresAuthAndOmniRoute(t *testing.T) {
-	env := parseEnvContent(readRepoFile(t, ".forge/config/models.env"))
+	env := parseEnvContent(readRepoFile(t, ".makercycle/config/models.env"))
 	want := map[string]string{
-		"FORGE_AUTH_MODE":         "api_key",
-		"FORGE_OMNIROUTE_ENABLED": "false",
-		"FORGE_OMNIROUTE_URL":     "http://localhost:20128",
-		"FORGE_OMNIROUTE_API_KEY": "omniroute-local",
-		"FORGE_OMNIROUTE_MODEL":   "claude-sonnet-4-6",
+		"MC_AUTH_MODE":         "api_key",
+		"MC_OMNIROUTE_ENABLED": "false",
+		"MC_OMNIROUTE_URL":     "http://localhost:20128",
+		"MC_OMNIROUTE_API_KEY": "omniroute-local",
+		"MC_OMNIROUTE_MODEL":   "claude-sonnet-4-6",
 	}
 	for k, v := range want {
 		if got, ok := env[k]; !ok || got != v {
 			t.Fatalf("models.env: %s = %q (presente=%v); want %q", k, got, ok, v)
 		}
 	}
-	// As chaves de API residem exclusivamente em .forge/config/project.env (ver multi_llm_test.go).
+	// As chaves de API residem exclusivamente em .makercycle/config/project.env (ver multi_llm_test.go).
 	if _, ok := env["LLM_API_KEY"]; ok {
 		t.Fatal("models.env não pode mais declarar LLM_API_KEY")
 	}
@@ -298,8 +298,8 @@ func TestReadmesDocumentAPIKeyOmniRouteAndResume(t *testing.T) {
 	for _, file := range []string{"README.md", "README.pt-BR.md"} {
 		c := readRepoFile(t, file)
 		for _, s := range []string{
-			"ANTHROPIC_API_KEY", ".forge/config/project.env", ".forge/config/models.env", "OmniRoute",
-			"FORGE_OMNIROUTE_ENABLED", "FORGE_OMNIROUTE_URL", "FORGE_OMNIROUTE_MODEL",
+			"ANTHROPIC_API_KEY", ".makercycle/config/project.env", ".makercycle/config/models.env", "OmniRoute",
+			"MC_OMNIROUTE_ENABLED", "MC_OMNIROUTE_URL", "MC_OMNIROUTE_MODEL",
 			"-resume", "-demand", "-stage", "RESUME.env",
 		} {
 			if !strings.Contains(c, s) {
@@ -319,11 +319,11 @@ func TestBuildAgentEnvInjectsAnthropicAPIKey(t *testing.T) {
 		base []string
 		want string
 	}{
-		{"AK-H1", []string{"PATH=/bin", "ANTHROPIC_API_KEY=", "FORGE_API_KEY=sk-forge"}, "sk-forge"},
-		{"AK-H2", []string{"PATH=/bin", "FORGE_API_KEY=sk-forge"}, "sk-forge"},
+		{"AK-H1", []string{"PATH=/bin", "ANTHROPIC_API_KEY=", "MC_API_KEY=sk-mc"}, "sk-mc"},
+		{"AK-H2", []string{"PATH=/bin", "MC_API_KEY=sk-mc"}, "sk-mc"},
 		{"AK-H3", []string{"LLM_API_KEY=sk-llm", "ANTHROPIC_API_KEY=sk-ant"}, "sk-ant"},
-		{"AK-E1", []string{"ANTHROPIC_API_KEY=old", "ANTHROPIC_API_KEY=old2", "FORGE_API_KEY=sk-forge"}, "old"},
-		{"AK-E2", []string{"ANTHROPIC_API_KEY=  ", "FORGE_API_KEY=  \"sk-quoted\"  "}, "sk-quoted"},
+		{"AK-E1", []string{"ANTHROPIC_API_KEY=old", "ANTHROPIC_API_KEY=old2", "MC_API_KEY=sk-mc"}, "old"},
+		{"AK-E2", []string{"ANTHROPIC_API_KEY=  ", "MC_API_KEY=  \"sk-quoted\"  "}, "sk-quoted"},
 		{"AK-E3", []string{"ANTHROPIC_API_KEY='sk-single'"}, "sk-single"},
 	}
 	for _, c := range cases {
@@ -347,13 +347,13 @@ func TestBuildAgentEnvNoAnthropicKeyWhenNoneConfigured(t *testing.T) {
 func TestAgentEnvFromModelsEnvReachesSubprocess(t *testing.T) {
 	dir := t.TempDir()
 	envFile := filepath.Join(dir, "models.env")
-	if err := os.WriteFile(envFile, []byte("export FORGE_API_KEY=\"sk-from-file\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("export MC_API_KEY=\"sk-from-file\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("LLM_API_KEY", "")
-	t.Setenv("FORGE_API_KEY", "")
-	t.Setenv("FORGE_AUTH_MODE", "api_key")
+	t.Setenv("MC_API_KEY", "")
+	t.Setenv("MC_AUTH_MODE", "api_key")
 	loadEnvFile(envFile)
 
 	env := agentEnvFromProcess()
@@ -367,8 +367,8 @@ func TestAgentEnvFromModelsEnvReachesSubprocess(t *testing.T) {
 }
 
 func TestAgentEnvFromProcessAnotherModeSkipsAnthropicKey(t *testing.T) {
-	t.Setenv("FORGE_AUTH_MODE", "another")
-	t.Setenv("FORGE_API_KEY", "sk-forge")
+	t.Setenv("MC_AUTH_MODE", "another")
+	t.Setenv("MC_API_KEY", "sk-mc")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	assertEnvAbsent(t, agentEnvFromProcess(), "LLM_API_KEY")
 	for _, v := range envValues(agentEnvFromProcess(), "ANTHROPIC_API_KEY") {

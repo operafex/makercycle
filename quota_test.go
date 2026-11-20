@@ -84,7 +84,7 @@ func TestFormatResetETA(t *testing.T) {
 
 func TestOmniRouteBinding(t *testing.T) {
 	// OB-H1: usa o binário claude e o modelo do OmniRoute, preservando identidade/args da etapa.
-	in := AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Bin: "agy",
+	in := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: "agy",
 		Model: "Gemini 3.8 Flash (High)", Skill: "x/y", Args: "--dangerously-skip-permissions"}
 	got := omniRouteBinding(in, testOmni)
 	want := in
@@ -105,8 +105,8 @@ func TestTelemetryModel(t *testing.T) {
 }
 
 func TestOmniRouteNotice(t *testing.T) {
-	got := omniRouteNotice("ETAPA 3: STRIKE", testOmni)
-	want := "[AVISO] Limite de cota/tokens atingido na ETAPA 3: STRIKE. Entrando no OmniRoute (http://localhost:20128 | modelo: claude-sonnet-4-6)..."
+	got := omniRouteNotice("ETAPA 3: MAKE", testOmni)
+	want := "[AVISO] Limite de cota/tokens atingido na ETAPA 3: MAKE. Entrando no OmniRoute (http://localhost:20128 | modelo: claude-sonnet-4-6)..."
 	if got != want {
 		t.Fatalf("omniRouteNotice:\n got: %q\nwant: %q", got, want)
 	}
@@ -139,7 +139,7 @@ func fakeRunner(replies []fakeReply, calls *[]fakeCall) agentRunner {
 	}
 }
 
-var fbAgent = AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Bin: "agy", Model: "gem"}
+var fbAgent = AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: "agy", Model: "gem"}
 
 var quotaReply = fakeReply{TokenStats{Input: 10, Output: 0, Total: 10}, "RESOURCE_EXHAUSTED. Resets in 45m10s", errors.New("exit status 1")}
 
@@ -182,7 +182,7 @@ func TestRunAgentWithFallbackQuotaWithOmniSuccess(t *testing.T) {
 	assertEnvAbsent(t, calls[0].env, "LLM_API_KEY") // modo alternativo na chamada primária
 	assertEnvSingle(t, calls[1].env, "ANTHROPIC_BASE_URL", "http://localhost:20128")
 	assertEnvSingle(t, calls[1].env, "ANTHROPIC_AUTH_TOKEN", "omniroute-local")
-	if !strings.Contains(notify.String(), omniRouteNotice("ETAPA 3: STRIKE", testOmni)) {
+	if !strings.Contains(notify.String(), omniRouteNotice("ETAPA 3: MAKE", testOmni)) {
 		t.Fatalf("aviso ausente: %q", notify.String())
 	}
 }
@@ -278,7 +278,7 @@ func TestRunAgentWithFallbackNoticeIsPlainTextInNotifyAndLog(t *testing.T) {
 	run := fakeRunner([]fakeReply{quotaReply, {TokenStats{Total: 1}, "ok", nil}}, &calls)
 	_ = runAgentWithFallback(fbAgent, "p", true, "api_key", testOmni, nil, run, &notify)
 	logged := closeLog()
-	notice := omniRouteNotice("ETAPA 3: STRIKE", testOmni)
+	notice := omniRouteNotice("ETAPA 3: MAKE", testOmni)
 	if notify.String() != notice+"\n" {
 		t.Fatalf("notify deve receber exatamente o aviso em texto puro: %q", notify.String())
 	}
@@ -291,7 +291,7 @@ func TestRunAgentWithFallbackNoticeIsPlainTextInNotifyAndLog(t *testing.T) {
 }
 
 func TestRunAgentWithFallbackStageLabelWithoutStage(t *testing.T) {
-	// FB-E4: binding sem Stage => rótulo usa apenas Forge.
+	// FB-E4: binding sem Stage => rótulo usa apenas Label.
 	var calls []fakeCall
 	var notify bytes.Buffer
 	a := fbAgent
@@ -322,9 +322,9 @@ func TestYellowWriterWrapsInANSI(t *testing.T) {
 
 func TestExecCaptureEnvUsesGivenEnv(t *testing.T) {
 	// EC-H1: env explícito substitui o ambiente herdado.
-	t.Setenv("FORGE_EC_PARENT", "herdado")
-	out, err := execCaptureEnv("sh", []string{"-c", "printf '%s|%s' \"$FORGE_EC_CHILD\" \"$FORGE_EC_PARENT\""},
-		[]string{"FORGE_EC_CHILD=filho", "PATH=" + os.Getenv("PATH")})
+	t.Setenv("MC_EC_PARENT", "herdado")
+	out, err := execCaptureEnv("sh", []string{"-c", "printf '%s|%s' \"$MC_EC_CHILD\" \"$MC_EC_PARENT\""},
+		[]string{"MC_EC_CHILD=filho", "PATH=" + os.Getenv("PATH")})
 	if err != nil || out != "filho|" {
 		t.Fatalf("execCaptureEnv = %q, %v; want \"filho|\"", out, err)
 	}
@@ -332,8 +332,8 @@ func TestExecCaptureEnvUsesGivenEnv(t *testing.T) {
 
 func TestExecCaptureEnvNilInherits(t *testing.T) {
 	// EC-E1: env nil => herda o ambiente do processo (comportamento de execCapture).
-	t.Setenv("FORGE_EC_PARENT", "herdado")
-	out, err := execCaptureEnv("sh", []string{"-c", "printf '%s' \"$FORGE_EC_PARENT\""}, nil)
+	t.Setenv("MC_EC_PARENT", "herdado")
+	out, err := execCaptureEnv("sh", []string{"-c", "printf '%s' \"$MC_EC_PARENT\""}, nil)
 	if err != nil || out != "herdado" {
 		t.Fatalf("execCaptureEnv(nil env) = %q, %v", out, err)
 	}
@@ -347,7 +347,7 @@ func TestRunAgentKeepsLegacySignature(t *testing.T) {
 func TestRunAgentStepReturnsAgentResultAndLogs(t *testing.T) {
 	// RA-H2: runAgentStep executa o binding real, devolve AgentResult e registra prompt/resposta sem ANSI.
 	closeLog := withTestRunLog(t)
-	a := AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Bin: "echo", Model: "m1"}
+	a := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: "echo", Model: "m1"}
 	off := testOmni
 	off.Enabled = false
 	res := runAgentStep(a, "PROMPT-STEP-456", false, "api_key", off)
@@ -358,7 +358,7 @@ func TestRunAgentStepReturnsAgentResultAndLogs(t *testing.T) {
 	if !strings.Contains(res.Output, "PROMPT-STEP-456") {
 		t.Fatalf("Output deve conter a resposta do agente: %q", res.Output)
 	}
-	for _, want := range []string{"PROMPT ENVIADO — ETAPA 3: STRIKE — BUILDER | m1", "RESPOSTA RECEBIDA", "concluído em"} {
+	for _, want := range []string{"PROMPT ENVIADO — ETAPA 3: MAKE — MAKER | m1", "RESPOSTA RECEBIDA", "concluído em"} {
 		if !strings.Contains(logged, want) {
 			t.Fatalf("log sem %q:\n%s", want, logged)
 		}
@@ -372,7 +372,7 @@ func TestRunAgentStepNonQuotaFailure(t *testing.T) {
 	// RA-X1: binário que falha sem marcador de cota => Err preenchido, Quota=false, sem OmniRoute.
 	closeLog := withTestRunLog(t)
 	defer closeLog()
-	a := AgentBinding{Forge: "ETAPA 3", Stage: "STRIKE", Alias: "BUILDER", Bin: "false", Model: "m1"}
+	a := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: "false", Model: "m1"}
 	res := runAgentStep(a, "p", false, "api_key", testOmni)
 	if res.Err == nil || res.Quota || res.UsedOmniRoute {
 		t.Fatalf("resultado inesperado: %+v", res)

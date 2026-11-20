@@ -16,7 +16,7 @@ const (
 	authModeAnother = "another"
 )
 
-var providerAPIKeyNames = []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "FORGE_API_KEY"}
+var providerAPIKeyNames = []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "MC_API_KEY"}
 
 func isProviderKey(key string) bool {
 	for _, p := range providerAPIKeyNames {
@@ -103,7 +103,7 @@ func resolveAuthMode(raw string) (string, error) {
 	case authModeAnother:
 		return authModeAnother, nil
 	default:
-		return "", fmt.Errorf("FORGE_AUTH_MODE inválido: %q (use %q)", trimmed, authModeAPIKey)
+		return "", fmt.Errorf("MC_AUTH_MODE inválido: %q (use %q)", trimmed, authModeAPIKey)
 	}
 }
 
@@ -116,7 +116,7 @@ func validateAuthConfig(authMode string, getenv func(string) string) error {
 	case authModeAnother:
 		return nil
 	case authModeAPIKey:
-		if strings.EqualFold(strings.TrimSpace(getenv("FORGE_OMNIROUTE_ENABLED")), "true") {
+		if strings.EqualFold(strings.TrimSpace(getenv("MC_OMNIROUTE_ENABLED")), "true") {
 			return nil
 		}
 		for _, k := range providerAPIKeyNames {
@@ -124,7 +124,7 @@ func validateAuthConfig(authMode string, getenv func(string) string) error {
 				return nil
 			}
 		}
-		return errors.New("nenhuma API key encontrada: adicione ANTHROPIC_API_KEY, OPENAI_API_KEY ou GEMINI_API_KEY em .forge/config/project.env (FORGE_API_KEY também é aceita)")
+		return errors.New("nenhuma API key encontrada: adicione ANTHROPIC_API_KEY, OPENAI_API_KEY ou GEMINI_API_KEY em .makercycle/config/project.env (MC_API_KEY também é aceita)")
 	default:
 		return fmt.Errorf("modo de autenticação inválido: %q", authMode)
 	}
@@ -138,7 +138,7 @@ type OmniRouteConfig struct {
 	Model   string
 }
 
-// loadOmniRouteConfig lê as variáveis de ambiente FORGE_OMNIROUTE_* aplicando defaults.
+// loadOmniRouteConfig lê as variáveis de ambiente MC_OMNIROUTE_* aplicando defaults.
 func loadOmniRouteConfig(getenv func(string) string) OmniRouteConfig {
 	cfg := OmniRouteConfig{
 		Enabled: false,
@@ -149,16 +149,16 @@ func loadOmniRouteConfig(getenv func(string) string) OmniRouteConfig {
 	if getenv == nil {
 		return cfg
 	}
-	if strings.EqualFold(strings.TrimSpace(getenv("FORGE_OMNIROUTE_ENABLED")), "true") {
+	if strings.EqualFold(strings.TrimSpace(getenv("MC_OMNIROUTE_ENABLED")), "true") {
 		cfg.Enabled = true
 	}
-	if v := strings.TrimSpace(getenv("FORGE_OMNIROUTE_URL")); v != "" {
+	if v := strings.TrimSpace(getenv("MC_OMNIROUTE_URL")); v != "" {
 		cfg.URL = v
 	}
-	if v := strings.TrimSpace(getenv("FORGE_OMNIROUTE_API_KEY")); v != "" {
+	if v := strings.TrimSpace(getenv("MC_OMNIROUTE_API_KEY")); v != "" {
 		cfg.APIKey = v
 	}
-	if v := strings.TrimSpace(getenv("FORGE_OMNIROUTE_MODEL")); v != "" {
+	if v := strings.TrimSpace(getenv("MC_OMNIROUTE_MODEL")); v != "" {
 		cfg.Model = v
 	}
 	return cfg
@@ -213,7 +213,7 @@ func buildAgentEnv(base []string, authMode string, omni OmniRouteConfig, useOmni
 
 		anthropic := vals["ANTHROPIC_API_KEY"]
 		if anthropic == "" {
-			anthropic = vals["FORGE_API_KEY"]
+			anthropic = vals["MC_API_KEY"]
 		}
 
 		res := make([]string, 0, len(base)+3)
@@ -287,5 +287,5 @@ func modelsEnvKeyWarning(names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return "[AVISO] Chaves de API encontradas em .forge/config/models.env (versionado): " + strings.Join(names, ", ") + ". Mova-as para .forge/config/project.env (ignorado pelo git) e remova-as do models.env."
+	return "[AVISO] Chaves de API encontradas em .makercycle/config/models.env (versionado): " + strings.Join(names, ", ") + ". Mova-as para .makercycle/config/project.env (ignorado pelo git) e remova-as do models.env."
 }

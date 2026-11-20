@@ -14,10 +14,10 @@ import (
 func TestStackEnvValues(t *testing.T) {
 	got := stackEnvValues(StackConfig{Name: "Go", TestCmd: "go test ./...", TypeCmd: "go vet ./...", LintCmd: ""})
 	want := map[string]string{
-		"FORGE_STACK_NAME": "Go",
-		"FORGE_TEST_CMD":   "go test ./...",
-		"FORGE_TYPE_CMD":   "go vet ./...",
-		"FORGE_LINT_CMD":   "",
+		"MC_STACK_NAME": "Go",
+		"MC_TEST_CMD":   "go test ./...",
+		"MC_TYPE_CMD":   "go vet ./...",
+		"MC_LINT_CMD":   "",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("esperava %d chaves, veio %d: %v", len(want), len(got), got)
@@ -30,12 +30,12 @@ func TestStackEnvValues(t *testing.T) {
 }
 
 func TestWriteProjectEnvCreatesFileAndParents(t *testing.T) {
-	p := filepath.Join(t.TempDir(), ".forge", "config", "project.env")
-	err := writeProjectEnv(p, map[string]string{"FORGE_TEST_CMD": "go test ./...", "FORGE_STACK_NAME": "Go"})
+	p := filepath.Join(t.TempDir(), ".makercycle", "config", "project.env")
+	err := writeProjectEnv(p, map[string]string{"MC_TEST_CMD": "go test ./...", "MC_STACK_NAME": "Go"})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	want := "FORGE_STACK_NAME=\"Go\"\nFORGE_TEST_CMD=\"go test ./...\"\n"
+	want := "MC_STACK_NAME=\"Go\"\nMC_TEST_CMD=\"go test ./...\"\n"
 	if got := readString(t, p); got != want {
 		t.Fatalf("conteúdo divergente:\n got: %q\nwant: %q", got, want)
 	}
@@ -50,48 +50,48 @@ func TestWriteProjectEnvCreatesFileAndParents(t *testing.T) {
 }
 
 func TestWriteProjectEnvMergesPreservingOtherLines(t *testing.T) {
-	p := writeEnv(t, "# config do projeto\nFORGE_DOCS_DIR=docs\n\nFORGE_STACK_NAME=Antigo\nMEU_TOKEN_CUSTOM=abc\n")
+	p := writeEnv(t, "# config do projeto\nMC_DOCS_DIR=docs\n\nMC_STACK_NAME=Antigo\nMEU_TOKEN_CUSTOM=abc\n")
 	err := writeProjectEnv(p, map[string]string{
-		"FORGE_STACK_NAME": "Go",
-		"FORGE_TEST_CMD":   "go test ./...",
-		"FORGE_LINT_CMD":   "",
+		"MC_STACK_NAME": "Go",
+		"MC_TEST_CMD":   "go test ./...",
+		"MC_LINT_CMD":   "",
 	})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	want := "# config do projeto\nFORGE_DOCS_DIR=docs\n\nFORGE_STACK_NAME=\"Go\"\nMEU_TOKEN_CUSTOM=abc\n" +
-		"FORGE_LINT_CMD=\"\"\nFORGE_TEST_CMD=\"go test ./...\"\n"
+	want := "# config do projeto\nMC_DOCS_DIR=docs\n\nMC_STACK_NAME=\"Go\"\nMEU_TOKEN_CUSTOM=abc\n" +
+		"MC_LINT_CMD=\"\"\nMC_TEST_CMD=\"go test ./...\"\n"
 	if got := readString(t, p); got != want {
 		t.Fatalf("merge divergente:\n got: %q\nwant: %q", got, want)
 	}
 }
 
 func TestWriteProjectEnvCollapsesDuplicateKeys(t *testing.T) {
-	p := writeEnv(t, "FORGE_STACK_NAME=A\nX=1\nFORGE_STACK_NAME=B\n")
-	if err := writeProjectEnv(p, map[string]string{"FORGE_STACK_NAME": "Go"}); err != nil {
+	p := writeEnv(t, "MC_STACK_NAME=A\nX=1\nMC_STACK_NAME=B\n")
+	if err := writeProjectEnv(p, map[string]string{"MC_STACK_NAME": "Go"}); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	want := "FORGE_STACK_NAME=\"Go\"\nX=1\n"
+	want := "MC_STACK_NAME=\"Go\"\nX=1\n"
 	if got := readString(t, p); got != want {
 		t.Fatalf("duplicatas não removidas:\n got: %q\nwant: %q", got, want)
 	}
 }
 
 func TestWriteProjectEnvAddsTrailingNewline(t *testing.T) {
-	p := writeEnv(t, "FORGE_DOCS_DIR=docs")
-	if err := writeProjectEnv(p, map[string]string{"FORGE_STACK_NAME": "Go"}); err != nil {
+	p := writeEnv(t, "MC_DOCS_DIR=docs")
+	if err := writeProjectEnv(p, map[string]string{"MC_STACK_NAME": "Go"}); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	want := "FORGE_DOCS_DIR=docs\nFORGE_STACK_NAME=\"Go\"\n"
+	want := "MC_DOCS_DIR=docs\nMC_STACK_NAME=\"Go\"\n"
 	if got := readString(t, p); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
 func TestWriteProjectEnvRejectsInvalidKeys(t *testing.T) {
-	for _, key := range []string{"", "forge_stack", "FORGE STACK", "FORGE=X", "1FORGE", "FORGE-STACK"} {
+	for _, key := range []string{"", "mc_stack", "MC STACK", "MC=X", "1MC", "MC-STACK"} {
 		t.Run(key, func(t *testing.T) {
-			original := "FORGE_DOCS_DIR=docs\n"
+			original := "MC_DOCS_DIR=docs\n"
 			p := writeEnv(t, original)
 			if err := writeProjectEnv(p, map[string]string{key: "x"}); err == nil {
 				t.Fatalf("chave %q deveria ser rejeitada", key)
@@ -110,9 +110,9 @@ func TestWriteProjectEnvRejectsUnsafeValues(t *testing.T) {
 		"aspas duplas":    `echo "oi"`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			original := "FORGE_DOCS_DIR=docs\n"
+			original := "MC_DOCS_DIR=docs\n"
 			p := writeEnv(t, original)
-			if err := writeProjectEnv(p, map[string]string{"FORGE_TEST_CMD": val}); err == nil {
+			if err := writeProjectEnv(p, map[string]string{"MC_TEST_CMD": val}); err == nil {
 				t.Fatalf("valor %q deveria ser rejeitado", val)
 			}
 			if got := readString(t, p); got != original {
@@ -152,7 +152,7 @@ func TestWriteThenLoadProjectStackRoundTrip(t *testing.T) {
 func TestSetupProjectEnvDetectedStack(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{"go.mod": "module x\n"})
-	p := filepath.Join(root, ".forge", "config", "project.env")
+	p := filepath.Join(root, ".makercycle", "config", "project.env")
 
 	got, ok, err := setupProjectEnv(p, root, "docs", "wiki")
 	if err != nil || !ok {
@@ -161,8 +161,8 @@ func TestSetupProjectEnvDetectedStack(t *testing.T) {
 	assertStack(t, got, wantGo)
 
 	content := readString(t, p)
-	for _, line := range []string{`FORGE_DOCS_DIR="docs"`, `FORGE_EXISTING_DOCS="wiki"`, `FORGE_STACK_NAME="Go"`,
-		`FORGE_TEST_CMD="go test -v -race ./..."`, `FORGE_TYPE_CMD="go vet ./..."`, `FORGE_LINT_CMD=""`} {
+	for _, line := range []string{`MC_DOCS_DIR="docs"`, `MC_EXISTING_DOCS="wiki"`, `MC_STACK_NAME="Go"`,
+		`MC_TEST_CMD="go test -v -race ./..."`, `MC_TYPE_CMD="go vet ./..."`, `MC_LINT_CMD=""`} {
 		if !strings.Contains(content, line+"\n") {
 			t.Fatalf("project.env sem %q:\n%s", line, content)
 		}
@@ -176,7 +176,7 @@ func TestSetupProjectEnvDetectedStack(t *testing.T) {
 
 func TestSetupProjectEnvUndetectedPreservesManualStack(t *testing.T) {
 	root := t.TempDir()
-	p := writeEnv(t, "FORGE_DOCS_DIR=old\nFORGE_STACK_NAME=\"Python\"\nFORGE_TEST_CMD=\"pytest\"\n")
+	p := writeEnv(t, "MC_DOCS_DIR=old\nMC_STACK_NAME=\"Python\"\nMC_TEST_CMD=\"pytest\"\n")
 
 	got, ok, err := setupProjectEnv(p, root, "docs", "")
 	if err != nil {
@@ -188,7 +188,7 @@ func TestSetupProjectEnvUndetectedPreservesManualStack(t *testing.T) {
 	assertStack(t, got, StackConfig{})
 
 	content := readString(t, p)
-	if !strings.Contains(content, "FORGE_DOCS_DIR=\"docs\"\n") || !strings.Contains(content, "FORGE_EXISTING_DOCS=\"\"\n") {
+	if !strings.Contains(content, "MC_DOCS_DIR=\"docs\"\n") || !strings.Contains(content, "MC_EXISTING_DOCS=\"\"\n") {
 		t.Fatalf("chaves de docs não atualizadas:\n%s", content)
 	}
 	loaded, err := loadProjectStack(p)
@@ -201,7 +201,7 @@ func TestSetupProjectEnvUndetectedPreservesManualStack(t *testing.T) {
 func TestSetupProjectEnvDetectedOverridesStackKeepsCustomKeys(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{"go.mod": "module x\n"})
-	p := writeEnv(t, "FORGE_STACK_NAME=Python\nFORGE_TEST_CMD=pytest\nFORGE_LINT_CMD=ruff\nMEU_CUSTOM=1\n")
+	p := writeEnv(t, "MC_STACK_NAME=Python\nMC_TEST_CMD=pytest\nMC_LINT_CMD=ruff\nMEU_CUSTOM=1\n")
 
 	if _, _, err := setupProjectEnv(p, root, "docs", ""); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -229,7 +229,7 @@ func TestSetupProjectEnvWriteErrorPropagates(t *testing.T) {
 func TestSetupProjectEnvRejectsUnsafeExistingDocs(t *testing.T) {
 	root := t.TempDir()
 	p := filepath.Join(t.TempDir(), "project.env")
-	if _, _, err := setupProjectEnv(p, root, "docs", "wiki\"\nFORGE_TEST_CMD=rm"); err == nil {
+	if _, _, err := setupProjectEnv(p, root, "docs", "wiki\"\nMC_TEST_CMD=rm"); err == nil {
 		t.Fatal("caminho de docs com aspas/quebra de linha deve ser rejeitado")
 	}
 }
