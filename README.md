@@ -36,7 +36,15 @@ Stages 3 → 4 → 5 run as a closed loop until the GATEKEEPER approves, asks fo
 go install github.com/operafex/makercycle@latest
 ```
 
-The binary is placed in `$(go env GOPATH)/bin` (usually `~/go/bin`) — make sure that folder is on your `PATH`.
+The binary is placed in `$(go env GOPATH)/bin` (usually `~/go/bin`). Add that folder to your `PATH` (zsh shown; on bash use `~/.bashrc`), check the binary and initialize your project:
+
+```bash
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
+source ~/.zshrc
+which makercycle
+makercycle -init
+```
+
 
 **Without Go** — pre-built binaries are published on every release for `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`, `windows/amd64` and `windows/arm64`. Use the one-line installer for your system:
 
@@ -101,7 +109,7 @@ The file is written atomically with mode `0600` (folder `0700`) and overwrites a
 ### 2. Onboard an existing project — `-setup` (Stage 0)
 
 ```bash
-go run . -setup
+makercycle -setup
 ```
 
 Creates `<docs>/PROJECT_CONTEXT.md`, `<docs>/demands/INDEX.md`, `<docs>/demands/`, `<docs>/logs/` and `<docs>/references/`.

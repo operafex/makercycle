@@ -561,60 +561,9 @@ func main() {
 }
 
 func runProjectSetup(reader *bufio.Reader, scout AgentBinding, defaultDocs string, jsonMetrics bool) {
-	printBanner("ETAPA 0: SCAN — SETUP DE PROJETO EXISTENTE",
-		fmt.Sprintf("Agente: %s (%s / %s)", scout.Alias, scout.Bin, scout.Model))
-
-	fmt.Print("\nOnde está localizada a documentação atual do projeto? (ex: docs, wiki, README.md ou Enter para criar /docs): ")
-	existingDocs, _ := reader.ReadString('\n')
-	existingDocs = strings.TrimSpace(existingDocs)
-
-	targetDocsDir := defaultDocs
-	if existingDocs != "" && !strings.HasSuffix(existingDocs, ".md") {
-		targetDocsDir = strings.Trim(existingDocs, "/")
-	}
-	if targetDocsDir == "" {
-		targetDocsDir = "docs"
-	}
-
-	if err := ensureMakerCycleDirs(); err != nil {
-		fatal("Erro ao criar estrutura .makercycle/: %v", err)
-	}
-	if err := ensureDocsDirs(targetDocsDir); err != nil {
-		fatal("Erro ao criar estrutura de pastas em %s: %v", targetDocsDir, err)
-	}
-	startRunLog(targetDocsDir, "stage0")
-	logBlock("CABEÇALHO DA EXECUÇÃO", buildRunHeader(StackConfig{Name: "(n/a — Etapa 0 Scan)"}, []AgentBinding{scout},
-		"", "", 0, 0, targetDocsDir))
-
-	detected, ok, envErr := confirmSetupStack(reader, os.Stdout, projectEnvPath, ".", targetDocsDir, existingDocs)
-	if envErr != nil {
-		fatal("Erro ao gravar %s: %v", projectEnvPath, envErr)
-	}
-	if ok {
-		logEvent("STACK CONFIRMADA: %s (testes: %s)", detected.Name, detected.TestCmd)
-	} else {
-		fmt.Println("[AVISO] Stack não detectada automaticamente. O SCOUT tentará identificá-la.")
-		logEvent("AVISO: stack não detectada automaticamente")
-	}
-
-	detectedName := ""
-	if ok {
-		detectedName = detected.Name
-	}
-	if err := runScoutAgent(scout, targetDocsDir, existingDocs, detectedName, jsonMetrics); err != nil {
+	if _, err := runProjectSetupWith(reader, scout, defaultDocs, jsonMetrics, runScoutAgent, time.Now); err != nil {
 		fatal("%v", err)
 	}
-
-	savedStack, loadErr := loadProjectStack(projectEnvPath)
-	bannerMsg := fmt.Sprintf("Contexto salvo em /%s/PROJECT_CONTEXT.md.", targetDocsDir)
-	if loadErr == nil {
-		bannerMsg += fmt.Sprintf("\nStack salva: %s", savedStack.Name)
-	} else {
-		fmt.Printf("[AVISO] Stack não configurada em project.env (motivo: %v). O menu manual será exibido no -task.\n", loadErr)
-		logEvent("AVISO: stack não configurada em project.env: %v", loadErr)
-	}
-	bannerMsg += "\nDispare novas demandas com: go run . -task \"...\""
-	printBanner("ETAPA 0 CONCLUÍDA", bannerMsg)
 }
 
 // referencesLine devolve a linha "- **Referências:**" da demanda (vazia quando não há referências).

@@ -464,3 +464,92 @@ func TestRecordRunTelemetryRegeneratesTelemetryMarkdown(t *testing.T) {
 		t.Errorf("TELEMETRY.md deve ser regenerado a cada execução:\n%s", md)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Task 5 — S0 (SCAN / -setup) nos KPIs sem coluna própria no histórico
+// ---------------------------------------------------------------------------
+
+const setupRuns = runsHeaderLine +
+	"300,2026-11-20T21:00:00-03:00,Go,(setup / SCAN),1,1,90,30,120,SETUP_OK,SCOUT: SUCCESS | Duração total: 42s\n" +
+	"100,2026-11-19T22:02:08-03:00,Go,docs/demands/2026-11-19-a.md,3,1,1000,100,1100,APPROVED,ok\n"
+
+const setupEvents = eventsHeaderLine +
+	"300,2026-11-20T20:59:30-03:00,S0,SCOUT,opus,1,90,30,120,42\n" +
+	"100,2026-11-19T22:00:06-03:00,S1,PLANNER,opus,1,500,50,550,60\n"
+
+func TestReadTelemetryRunsAggregatesS0IntoStageZero(t *testing.T) {
+	_, rp, ep := writeTelemetryFiles(t, setupRuns, setupEvents)
+	runs, err := readTelemetryRuns(rp, ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := findRun(t, runs, "300")
+	if s.StageTokens != [6]int{120, 0, 0, 0, 0, 0} {
+		t.Errorf("tokens S0 devem ir para StageTokens[0]: %v", s.StageTokens)
+	}
+	if s.DurationSeconds != 42 {
+		t.Errorf("a duração do S0 deve ser somada: %v", s.DurationSeconds)
+	}
+	if d := findRun(t, runs, "100"); d.StageTokens != [6]int{0, 550, 0, 0, 0, 0} {
+		t.Errorf("execuções sem S0 mantêm StageTokens[0] = 0: %v", d.StageTokens)
+	}
+}
+
+func TestBuildTelemetryMarkdownS0KPIAndHistory(t *testing.T) {
+	runs := []telemetryRun{
+		{RunID: "300", Timestamp: "2026-11-20T21:00:00-03:00", Stack: "Go", DemandFile: "(setup / SCAN)",
+			Status: "SETUP_OK", MaxAttempts: 1, Attempts: 1, TokensIn: 90, TokensOut: 30, Tokens: 120,
+			DurationSeconds: 42, StageTokens: [6]int{120, 0, 0, 0, 0, 0}},
+		{RunID: "100", Timestamp: "2026-11-19T22:02:08-03:00", Stack: "Go", DemandFile: "docs/demands/2026-11-19-a.md",
+			Status: "APPROVED", MaxAttempts: 3, Attempts: 1, TokensIn: 1000, TokensOut: 100, Tokens: 1100,
+			DurationSeconds: 60, StageTokens: [6]int{0, 550, 0, 0, 0, 0}},
+	}
+	md := buildTelemetryMarkdown(runs)
+	for _, want := range []string{
+		"| Total de Execuções | 2 |",
+		"| Total Acumulado de Tokens | 1220 (entrada: 1090 / saída: 130) |",
+		"| Tokens E0 SCAN | 120 |",
+		"| Tokens E1 PLAN | 550 |",
+		"| Duração Média | 51s |",
+		"| 2026-11-20 21:00 | 300 | SETUP_OK | (setup / SCAN) | Go | 1/1 | 42s | 120 | n/a | n/a | n/a | n/a | n/a |",
+		"| 2026-11-19 22:02 | 100 | APPROVED | 2026-11-19-a.md | Go | 1/3 | 1m0s | 1100 | 550 | n/a | n/a | n/a | n/a |",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("esperava %q:\n%s", want, md)
+		}
+	}
+	if !strings.Contains(md, telemetryTableHeader+"\n|"+strings.Repeat(" :--- |", 13)+"\n") {
+		t.Errorf("o histórico continua com 13 colunas (S0 sem coluna própria):\n%s", md)
+	}
+	if strings.Contains(md, "Tokens E0 SCAN |  |") || strings.Contains(md, "| Tokens E0 SCAN | Tokens E1 PLAN") {
+		t.Errorf("S0 não pode ganhar coluna na tabela de histórico:\n%s", md)
+	}
+	if strings.Index(md, "| Tokens E0 SCAN |") > strings.Index(md, "| Tokens E1 PLAN |") {
+		t.Errorf("o KPI E0 SCAN deve vir antes de E1 PLAN")
+	}
+}
+
+func TestBuildTelemetryMarkdownS0KPIZeroWithoutSetup(t *testing.T) {
+	md := buildTelemetryMarkdown(sampleTelemetryRuns())
+	if !strings.Contains(md, "| Tokens E0 SCAN | 0 |") {
+		t.Errorf("sem -setup o KPI E0 SCAN deve ser 0:\n%s", md)
+	}
+	if !strings.Contains(buildTelemetryMarkdown(nil), "| Tokens E0 SCAN | 0 |") {
+		t.Errorf("sem execuções o KPI E0 SCAN deve ser 0")
+	}
+}
+
+func TestTelemetryDemandCell(t *testing.T) {
+	cases := map[string]string{
+		"":                             "—",
+		noDemandMarker:                 "—",
+		"(setup / SCAN)":               "(setup / SCAN)",
+		"docs/demands/2026-11-19-a.md": "2026-11-19-a.md",
+		"2026-11-19-a.md":              "2026-11-19-a.md",
+	}
+	for in, want := range cases {
+		if got := telemetryDemandCell(in); got != want {
+			t.Errorf("telemetryDemandCell(%q) = %q; want %q", in, got, want)
+		}
+	}
+}

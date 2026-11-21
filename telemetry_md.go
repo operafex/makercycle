@@ -23,7 +23,18 @@ type telemetryRun struct {
 	MaxAttempts, Attempts                             int
 	TokensIn, TokensOut, Tokens                       int
 	DurationSeconds                                   float64
-	StageTokens                                       [6]int // índices 1..5 = Etapas; 0 = SCAN (não se aplica)
+	StageTokens                                       [6]int // índices 0 = SCAN (S0), 1..5 = Etapas
+}
+
+// telemetryDemandCell devolve o texto da coluna Demanda do histórico.
+func telemetryDemandCell(demandFile string) string {
+	switch demandFile {
+	case "", noDemandMarker:
+		return "—"
+	case setupDemandLabel:
+		return setupDemandLabel
+	}
+	return filepath.Base(demandFile)
 }
 
 // stageIndex converte o código de etapa de events.csv (S0..S5, com sufixo livre) em índice; -1 se inválido.
@@ -143,7 +154,7 @@ func readTelemetryRuns(runsPath, eventsPath string) ([]telemetryRun, error) {
 		if d, perr := strconv.ParseFloat(strings.TrimSpace(e[ecol["DurationSeconds"]]), 64); perr == nil && !math.IsNaN(d) && !math.IsInf(d, 0) {
 			runs[i].DurationSeconds += d
 		}
-		if s := stageIndex(e[ecol["Stage"]]); s >= 1 {
+		if s := stageIndex(e[ecol["Stage"]]); s >= 0 {
 			runs[i].StageTokens[s] += atoiOrZero(e[ecol["TotalTokens"]])
 		}
 	}
@@ -200,7 +211,7 @@ func buildTelemetryMarkdown(runs []telemetryRun) string {
 		tokensIn += r.TokensIn
 		tokensOut += r.TokensOut
 		duration += r.DurationSeconds
-		for i := 1; i <= 5; i++ {
+		for i := 0; i <= 5; i++ {
 			stages[i] += r.StageTokens[i]
 		}
 	}
@@ -219,6 +230,7 @@ func buildTelemetryMarkdown(runs []telemetryRun) string {
 	fmt.Fprintf(&b, "| Total de Execuções | %d |\n", n)
 	fmt.Fprintf(&b, "| Taxa de Sucesso | %.1f%% (%d APPROVED / %d) |\n", rate, approved, n)
 	fmt.Fprintf(&b, "| Total Acumulado de Tokens | %d (entrada: %d / saída: %d) |\n", tokens, tokensIn, tokensOut)
+	fmt.Fprintf(&b, "| Tokens E0 SCAN | %d |\n", stages[0])
 	fmt.Fprintf(&b, "| Tokens E1 PLAN | %d |\n", stages[1])
 	fmt.Fprintf(&b, "| Tokens E2 CHALLENGE | %d |\n", stages[2])
 	fmt.Fprintf(&b, "| Tokens E3 MAKE | %d |\n", stages[3])
@@ -234,10 +246,7 @@ func buildTelemetryMarkdown(runs []telemetryRun) string {
 		if t, err := time.Parse(time.RFC3339, r.Timestamp); err == nil {
 			date = t.Format("2006-01-02 15:04")
 		}
-		demand := "—"
-		if r.DemandFile != "" && r.DemandFile != noDemandMarker {
-			demand = filepath.Base(r.DemandFile)
-		}
+		demand := telemetryDemandCell(r.DemandFile)
 		cells := []string{
 			mdCell(date), mdCell(r.RunID), mdCell(r.Status), mdCell(demand), mdCell(r.Stack),
 			fmt.Sprintf("%d/%d", r.Attempts, r.MaxAttempts),

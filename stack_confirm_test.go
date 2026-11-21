@@ -187,7 +187,8 @@ func TestResolveRunStackInvalidChoiceIsError(t *testing.T) {
 }
 
 func TestMainDeclaresSelectStackFlag(t *testing.T) {
-	src := readRepoFile(t, "makercycle.go")
+	// O fluxo do -setup (confirmSetupStack) vive em setup_run.go desde a telemetria S0.
+	src := readRepoFile(t, "makercycle.go") + readRepoFile(t, "setup_run.go")
 	for _, want := range []string{
 		`flag.Bool("select-stack", false,`,
 		"resolveRunStack(reader, os.Stdout, projectEnvPath, *selectStackFlag)",

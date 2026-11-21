@@ -41,22 +41,22 @@ func buildScoutPrompt(existingDocs, docsDir, detectedName string) string {
 }
 
 // runScoutAgent executa o SCOUT e valida que <docs>/PROJECT_CONTEXT.md foi gerado.
-func runScoutAgent(scout AgentBinding, docsDir, existingDocs, detectedName string, jsonMetrics bool) error {
+func runScoutAgent(scout AgentBinding, docsDir, existingDocs, detectedName string, jsonMetrics bool) (TokenStats, error) {
 	stats, err := runAgent(scout, buildScoutPrompt(existingDocs, docsDir, detectedName), jsonMetrics)
 	if err != nil {
-		return fmt.Errorf("Falha na Etapa 0 (SCOUT): %w", err)
+		return stats, fmt.Errorf("Falha na Etapa 0 (SCOUT): %w", err)
 	}
 	reportTokens(scout, stats)
 
 	contextPath := filepath.Join(docsDir, "PROJECT_CONTEXT.md")
 	if info, statErr := os.Stat(contextPath); statErr != nil || info.IsDir() {
-		return fmt.Errorf("Etapa 0 terminou sem gerar %s. O SCOUT pode ter sido bloqueado por permissões (veja MC_SCOUT_ARGS em .makercycle/config/models.env) ou falhou ao gravar o arquivo.", contextPath)
+		return stats, fmt.Errorf("Etapa 0 terminou sem gerar %s. O SCOUT pode ter sido bloqueado por permissões (veja MC_SCOUT_ARGS em .makercycle/config/models.env) ou falhou ao gravar o arquivo.", contextPath)
 	}
 	if err := ensureDocsStructureSection(contextPath, docsDir); err != nil {
 		fmt.Printf("[AVISO] Não foi possível documentar a estrutura de pastas em %s: %v\n", contextPath, err)
 		logEvent("AVISO: falha ao documentar estrutura em %s: %v", contextPath, err)
 	}
-	return nil
+	return stats, nil
 }
 
 // initAuthError valida a autenticação como o fluxo principal (resolveAuthMode + validateAuthConfig).
@@ -193,7 +193,7 @@ func runInit(opts initOptions) {
 	} else {
 		scout := agents[0]
 		printBanner("ETAPA 0: SCAN — SCOUT", fmt.Sprintf("Agente: %s (%s / %s)", scout.Alias, scout.Bin, scout.Model))
-		if err := runScoutAgent(scout, opts.DocsDir, "", stackName, opts.JSONMetrics); err != nil {
+		if _, err := runScoutAgent(scout, opts.DocsDir, "", stackName, opts.JSONMetrics); err != nil {
 			fmt.Printf("[FALHA] %v\n", err)
 			logEvent("FALHA SCAN: %v", err)
 			code = 1
