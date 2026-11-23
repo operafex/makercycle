@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -255,7 +256,7 @@ func TestBuildTelemetryMarkdownKPIs(t *testing.T) {
 		"## Indicadores Gerais (KPIs)",
 		"| Indicador | Valor |",
 		"| Total de Execuções | 2 |",
-		"| Taxa de Sucesso | 50.0% (1 APPROVED / 2) |",
+		"| Taxa de Sucesso | 50.0% (1 APPROVED + 0 SETUP_OK / 2) |",
 		"| Total Acumulado de Tokens | 1155 (entrada: 1050 / saída: 105) |",
 		"| Tokens E1 PLAN | 583 |",
 		"| Tokens E2 CHALLENGE | 132 |",
@@ -353,7 +354,7 @@ func TestBuildTelemetryMarkdownNoRuns(t *testing.T) {
 	md := buildTelemetryMarkdown(nil)
 	for _, want := range []string{
 		"| Total de Execuções | 0 |",
-		"| Taxa de Sucesso | 0.0% (0 APPROVED / 0) |",
+		"| Taxa de Sucesso | 0.0% (0 APPROVED + 0 SETUP_OK / 0) |",
 		"| Total Acumulado de Tokens | 0 (entrada: 0 / saída: 0) |",
 		"| Duração Média | 0s |",
 		telemetryTableHeader,
@@ -550,6 +551,66 @@ func TestTelemetryDemandCell(t *testing.T) {
 	for in, want := range cases {
 		if got := telemetryDemandCell(in); got != want {
 			t.Errorf("telemetryDemandCell(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 6 — SETUP_OK conta como sucesso na taxa geral dos KPIs
+// ---------------------------------------------------------------------------
+
+func statusRuns(statuses ...string) []telemetryRun {
+	runs := make([]telemetryRun, 0, len(statuses))
+	for i, st := range statuses {
+		runs = append(runs, telemetryRun{RunID: strconv.Itoa(i + 1), Timestamp: "2026-11-20T10:00:00-03:00", Stack: "Go", Status: st})
+	}
+	return runs
+}
+
+func TestBuildTelemetryMarkdownSetupOKCountsAsSuccess(t *testing.T) {
+	cases := []struct {
+		name     string
+		statuses []string
+		want     string
+	}{
+		{"setup_ok e approved", []string{"SETUP_OK", "APPROVED"}, "| Taxa de Sucesso | 100.0% (1 APPROVED + 1 SETUP_OK / 2) |"},
+		{"só setup_ok", []string{"SETUP_OK"}, "| Taxa de Sucesso | 100.0% (0 APPROVED + 1 SETUP_OK / 1) |"},
+		{"setup_ok com falhas", []string{"SETUP_OK", "ERROR", "SPEC_REVISION_REQUIRED", "APPROVED"}, "| Taxa de Sucesso | 50.0% (1 APPROVED + 1 SETUP_OK / 4) |"},
+		{"setup ERROR não conta", []string{"ERROR", "ERROR"}, "| Taxa de Sucesso | 0.0% (0 APPROVED + 0 SETUP_OK / 2) |"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			md := buildTelemetryMarkdown(statusRuns(c.statuses...))
+			if !strings.Contains(md, c.want) {
+				t.Errorf("esperava %q:\n%s", c.want, md)
+			}
+		})
+	}
+}
+
+func TestBuildTelemetryMarkdownSuccessStatusIsExact(t *testing.T) {
+	// Variações de caixa ou sufixo não são sucesso: o contrato usa o literal exato.
+	md := buildTelemetryMarkdown(statusRuns("setup_ok", "SETUP_OK_PARTIAL", "approved"))
+	if want := "| Taxa de Sucesso | 0.0% (0 APPROVED + 0 SETUP_OK / 3) |"; !strings.Contains(md, want) {
+		t.Errorf("esperava %q:\n%s", want, md)
+	}
+}
+
+func TestBuildTelemetryMarkdownSetupOKDoesNotChangeOtherKPIs(t *testing.T) {
+	runs := []telemetryRun{
+		{RunID: "300", Timestamp: "2026-11-20T21:00:00-03:00", Stack: "Go", DemandFile: setupDemandLabel, Status: "SETUP_OK",
+			MaxAttempts: 1, Attempts: 1, TokensIn: 90, TokensOut: 30, Tokens: 120, DurationSeconds: 42, StageTokens: [6]int{120, 0, 0, 0, 0, 0}},
+	}
+	md := buildTelemetryMarkdown(runs)
+	for _, want := range []string{
+		"| Total de Execuções | 1 |",
+		"| Total Acumulado de Tokens | 120 (entrada: 90 / saída: 30) |",
+		"| Tokens E0 SCAN | 120 |",
+		"| Duração Média | 42s |",
+		"| 2026-11-20 21:00 | 300 | SETUP_OK | (setup / SCAN) | Go | 1/1 | 42s | 120 | n/a | n/a | n/a | n/a | n/a |",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("esperava %q:\n%s", want, md)
 		}
 	}
 }

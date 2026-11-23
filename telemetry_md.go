@@ -200,12 +200,15 @@ func buildTelemetryMarkdown(runs []telemetryRun) string {
 	copy(sorted, runs)
 	sort.SliceStable(sorted, func(i, j int) bool { return telemetryRunLess(sorted[i], sorted[j]) })
 
-	var approved, tokens, tokensIn, tokensOut int
+	var approved, setupOK, tokens, tokensIn, tokensOut int
 	var duration float64
 	var stages [6]int
 	for _, r := range runs {
-		if r.Status == "APPROVED" {
+		switch r.Status {
+		case "APPROVED":
 			approved++
+		case setupRunStatusOK:
+			setupOK++
 		}
 		tokens += r.Tokens
 		tokensIn += r.TokensIn
@@ -218,7 +221,7 @@ func buildTelemetryMarkdown(runs []telemetryRun) string {
 	n := len(runs)
 	rate, avg := 0.0, 0.0
 	if n > 0 {
-		rate = float64(approved) / float64(n) * 100
+		rate = float64(approved+setupOK) / float64(n) * 100
 		avg = duration / float64(n)
 	}
 
@@ -228,7 +231,7 @@ func buildTelemetryMarkdown(runs []telemetryRun) string {
 	b.WriteString("## Indicadores Gerais (KPIs)\n\n")
 	b.WriteString("| Indicador | Valor |\n| :--- | :--- |\n")
 	fmt.Fprintf(&b, "| Total de Execuções | %d |\n", n)
-	fmt.Fprintf(&b, "| Taxa de Sucesso | %.1f%% (%d APPROVED / %d) |\n", rate, approved, n)
+	fmt.Fprintf(&b, "| Taxa de Sucesso | %.1f%% (%d APPROVED + %d SETUP_OK / %d) |\n", rate, approved, setupOK, n)
 	fmt.Fprintf(&b, "| Total Acumulado de Tokens | %d (entrada: %d / saída: %d) |\n", tokens, tokensIn, tokensOut)
 	fmt.Fprintf(&b, "| Tokens E0 SCAN | %d |\n", stages[0])
 	fmt.Fprintf(&b, "| Tokens E1 PLAN | %d |\n", stages[1])
