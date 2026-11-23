@@ -49,10 +49,10 @@ func specAbortNote(attempts int) string {
 // buildPlannerPrompt monta o prompt da Etapa 1. A partir da 2ª rodada, acrescenta a instrução de revisão.
 func buildPlannerPrompt(skill, docsDir, stackName, task, demandFile string, refs []string, specAttempt int) string {
 	prompt := fmt.Sprintf(
-		"Siga estritamente as instruções de @.makercycle/agents/01_PLANNER.md aplicando a skill %s. "+
+		"Siga estritamente as instruções de @.makercycle/agents/01_PLANNER.md%s. "+
 			"Diretório de documentação: %s/. Stack: %s. Demanda: %s. Arquivo da demanda: %s. "+
 			"Grave .makercycle/state/PLAN.md, .makercycle/state/TEST_CASES.md e os testes em estado RED.",
-		skill, docsDir, stackName, task, demandFile,
+		skillInstruction(skill), docsDir, stackName, task, demandFile,
 	) + referencesPrompt(refs)
 	if specAttempt > 1 {
 		prompt += specRevisionInstruction
@@ -63,10 +63,10 @@ func buildPlannerPrompt(skill, docsDir, stackName, task, demandFile string, refs
 // buildCriticPrompt monta o prompt da Etapa 2.
 func buildCriticPrompt(skill, docsDir string) string {
 	return fmt.Sprintf(
-		"Siga estritamente as instruções de @.makercycle/agents/02_CRITIC.md aplicando a skill %s. "+
+		"Siga estritamente as instruções de @.makercycle/agents/02_CRITIC.md%s. "+
 			"Diretório de documentação: %s/. Audite @.makercycle/state/PLAN.md, @.makercycle/state/TEST_CASES.md e os arquivos de teste recém-criados. "+
 			"Grave seu veredito em .makercycle/state/SPEC_REVIEW.md.",
-		skill, docsDir,
+		skillInstruction(skill), docsDir,
 	)
 }
 

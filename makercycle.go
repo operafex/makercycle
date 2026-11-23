@@ -107,6 +107,7 @@ func main() {
 	buildBin := flag.String("maker-bin", getEnv("MC_MAKER_BIN", "agy"), "Binário da Etapa 3 (MAKER)")
 	buildModel := flag.String("maker-model", getEnv("MC_MAKER_MODEL", "Gemini 3.8 Flash (High)"), "Modelo da Etapa 3 (MAKER)")
 	buildArgs := flag.String("maker-args", getEnv("MC_MAKER_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 3 (MAKER)")
+	buildSkill := flag.String("maker-skill", getEnv("MC_MAKER_SKILL", ""), "Skill(s) da Etapa 3 (MAKER), separadas por vírgula")
 
 	sentBin := flag.String("auditor-bin", getEnv("MC_AUDITOR_BIN", "agy"), "Binário da Etapa 4B (AUDITOR)")
 	sentModel := flag.String("auditor-model", getEnv("MC_AUDITOR_MODEL", "Claude Sonnet 4.6 (Thinking)"), "Modelo da Etapa 4B (AUDITOR)")
@@ -116,6 +117,10 @@ func main() {
 	arbBin := flag.String("gatekeeper-bin", getEnv("MC_GATEKEEPER_BIN", "agy"), "Binário da Etapa 5 (GATEKEEPER)")
 	arbModel := flag.String("gatekeeper-model", getEnv("MC_GATEKEEPER_MODEL", "Claude Sonnet 4.6 (Thinking)"), "Modelo da Etapa 5 (GATEKEEPER)")
 	arbArgs := flag.String("gatekeeper-args", getEnv("MC_GATEKEEPER_ARGS", "--dangerously-skip-permissions"), "Argumentos extras do CLI da Etapa 5 (GATEKEEPER)")
+	arbSkill := flag.String("gatekeeper-skill", getEnv("MC_GATEKEEPER_SKILL", ""), "Skill(s) da Etapa 5 (GATEKEEPER), separadas por vírgula")
+
+	uiSkill := flag.String("ui-skill", uiSkillFromEnv(os.Getenv), "Skill de UI anexada ao MAKER/GATEKEEPER quando o PLAN.md marca UI_SKILL: REQUIRED (MC_UI_SKILL)")
+	noUI := flag.Bool("no-ui", false, "Desliga a injeção da skill de UI nesta execução, ignorando o UI_SKILL do PLAN.md")
 
 	flag.Parse()
 
@@ -157,9 +162,9 @@ func main() {
 	scout := AgentBinding{Label: "ETAPA 0", Stage: "SCAN", Alias: "SCOUT", Bin: *onbBin, Model: *onbModel, Args: *onbArgs}
 	planner := AgentBinding{Label: "ETAPA 1", Stage: "PLAN", Alias: "PLANNER", Bin: *archBin, Model: *archModel, Skill: *archSkill, Args: *archArgs}
 	critic := AgentBinding{Label: "ETAPA 2", Stage: "CHALLENGE", Alias: "CRITIC", Bin: *skepBin, Model: *skepModel, Skill: *skepSkill, Args: *skepArgs}
-	maker := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: *buildBin, Model: *buildModel, Args: *buildArgs}
+	maker := AgentBinding{Label: "ETAPA 3", Stage: "MAKE", Alias: "MAKER", Bin: *buildBin, Model: *buildModel, Skill: *buildSkill, Args: *buildArgs}
 	auditor := AgentBinding{Label: "ETAPA 4B", Stage: "VERIFY: HARDEN", Alias: "AUDITOR", Bin: *sentBin, Model: *sentModel, Skill: *sentSkill, Args: *sentArgs}
-	gatekeeper := AgentBinding{Label: "ETAPA 5", Stage: "GATE", Alias: "GATEKEEPER", Bin: *arbBin, Model: *arbModel, Args: *arbArgs}
+	gatekeeper := AgentBinding{Label: "ETAPA 5", Stage: "GATE", Alias: "GATEKEEPER", Bin: *arbBin, Model: *arbModel, Skill: *arbSkill, Args: *arbArgs}
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -409,17 +414,15 @@ func main() {
 	for attempt := firstAttempt; attempt <= *maxAttempts; attempt++ {
 		// ETAPA 3 — MAKE: MAKER (Contexto Limpo)
 		if shouldRunStage(3, startStage, attempt, firstAttempt) {
-			printBanner(fmt.Sprintf("ETAPA 3: MAKE — MAKER (Tentativa %d/%d)", attempt, *maxAttempts),
-				fmt.Sprintf("Contexto Higienizado | Modelo: %s (%s)", maker.Model, maker.Bin))
-
-			execPrompt := fmt.Sprintf(
-				"Siga estritamente as instruções de @.makercycle/agents/03_MAKER.md. Diretório de docs: %s/. "+
-					"Leia @.makercycle/state/PLAN.md e @.makercycle/state/TEST_CASES.md e implemente as Tasks no código de produção.",
-				docsDir,
-			)
-			if attempt > 1 {
-				execPrompt += " ATENÇÃO: Rodada de correção. Leia @.makercycle/state/DECISION.md, @.makercycle/state/VERIFY_REPORT.md e @.makercycle/state/SECURITY_REPORT.md e corrija todos os apontamentos."
+			makerSkills := stageSkillWithUI(maker.Skill, *uiSkill, isUISkillRequired(), *noUI)
+			makerBanner := fmt.Sprintf("Contexto Higienizado | Modelo: %s (%s)", maker.Model, maker.Bin)
+			if makerSkills != "" {
+				makerBanner = fmt.Sprintf("Skill: %s | %s", makerSkills, makerBanner)
+				logEvent("Skills da Etapa 3 (MAKER): %s", makerSkills)
 			}
+			printBanner(fmt.Sprintf("ETAPA 3: MAKE — MAKER (Tentativa %d/%d)", attempt, *maxAttempts), makerBanner)
+
+			execPrompt := buildMakerPrompt(makerSkills, docsDir, attempt)
 
 			bStart := time.Now()
 			res := runAgentStep(maker, execPrompt, *jsonMetrics, authMode, omni)
@@ -445,11 +448,7 @@ func main() {
 			printBanner(fmt.Sprintf("ETAPA 4B: VERIFY: HARDEN — AUDITOR (Tentativa %d/%d)", attempt, *maxAttempts),
 				fmt.Sprintf("Skill: %s | Modelo: %s", auditor.Skill, auditor.Model))
 
-			secPrompt := fmt.Sprintf(
-				"Siga estritamente as instruções de @.makercycle/agents/04_AUDITOR.md aplicando a skill %s. "+
-					"Audite o git diff atual e grave o relatório em .makercycle/state/SECURITY_REPORT.md.",
-				auditor.Skill,
-			)
+			secPrompt := buildAuditorPrompt(auditor.Skill)
 			secReportPath := ".makercycle/state/SECURITY_REPORT.md"
 			var secModBefore time.Time
 			if fi, statErr := os.Stat(secReportPath); statErr == nil {
@@ -485,16 +484,15 @@ func main() {
 				}
 			}
 
-			printBanner(fmt.Sprintf("ETAPA 5: GATE — GATEKEEPER (Tentativa %d/%d)", attempt, *maxAttempts),
-				fmt.Sprintf("Modelo: %s (%s)", gatekeeper.Model, gatekeeper.Bin))
+			gateSkills := stageSkillWithUI(gatekeeper.Skill, *uiSkill, isUISkillRequired(), *noUI)
+			gateBanner := fmt.Sprintf("Modelo: %s (%s)", gatekeeper.Model, gatekeeper.Bin)
+			if gateSkills != "" {
+				gateBanner = fmt.Sprintf("Skill: %s | %s", gateSkills, gateBanner)
+				logEvent("Skills da Etapa 5 (GATEKEEPER): %s", gateSkills)
+			}
+			printBanner(fmt.Sprintf("ETAPA 5: GATE — GATEKEEPER (Tentativa %d/%d)", attempt, *maxAttempts), gateBanner)
 
-			arbPrompt := fmt.Sprintf(
-				"Siga estritamente as instruções de @.makercycle/agents/05_GATEKEEPER.md. "+
-					"Esta é a tentativa ATTEMPT: %d de %d. "+
-					"Analise @.makercycle/state/PLAN.md, @.makercycle/state/TEST_CASES.md, @.makercycle/state/VERIFY_REPORT.md, @.makercycle/state/SECURITY_REPORT.md e execute git diff. "+
-					"Grave seu veredito em .makercycle/state/DECISION.md.",
-				attempt, *maxAttempts,
-			)
+			arbPrompt := buildGatekeeperPrompt(gateSkills, attempt, *maxAttempts)
 
 			aStart := time.Now()
 			res := runAgentStep(gatekeeper, arbPrompt, *jsonMetrics, authMode, omni)
@@ -1447,12 +1445,13 @@ func collectConfiguredSkills(environ []string) []string {
 		if len(parts) != 2 || !skillEnvRe.MatchString(parts[0]) {
 			continue
 		}
-		v := strings.TrimSpace(parts[1])
-		if v == "" || seen[v] {
-			continue
+		for _, v := range splitSkills(parts[1]) {
+			if seen[v] {
+				continue
+			}
+			seen[v] = true
+			skills = append(skills, v)
 		}
-		seen[v] = true
-		skills = append(skills, v)
 	}
 	sort.Strings(skills)
 	return skills
