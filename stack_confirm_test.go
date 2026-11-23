@@ -58,22 +58,25 @@ func TestConfirmSetupStackDefaultsConfirm(t *testing.T) {
 	}
 }
 
+// [REGRESSÃO JUSTIFICADA] docs/references/setup-ux-and-db-prompt.md §2: quando o usuário opta por alterar a
+// stack detectada no -setup/-init, o menu exibido passa a ser o de presets (Go, Node Backend, Node Frontend,
+// Python, Rust, Personalizado) em vez do menu de execução do -task. As 4 respostas (p/P/n/N) continuam abrindo
+// o menu e a escolha continua gravada em project.env; só mudam o título do menu e a numeração (4 = Python).
 func TestConfirmSetupStackCustomizeOpensMenu(t *testing.T) {
 	for _, first := range []string{"p", "P", "n", "N"} {
 		root, envPath := goProjectRoot(t)
-		// project.env ainda não existe => menu manual; opção 1 = Ruby on Rails
-		s, ok, out, err := runConfirm(t, root, envPath, first+"\n1\n")
+		s, ok, out, err := runConfirm(t, root, envPath, first+"\n4\n")
 		if err != nil || !ok {
 			t.Fatalf("entrada %q: ok=%v err=%v", first, ok, err)
 		}
-		if s.Name != "Ruby on Rails" {
+		if s.Name != "Python" {
 			t.Errorf("entrada %q: stack = %q, esperava a escolhida no menu", first, s.Name)
 		}
-		if !strings.Contains(out, "Qual stack deve ser utilizada nesta execução?") {
+		if !strings.Contains(out, stackPresetMenuTitle) {
 			t.Errorf("entrada %q: menu não exibido:\n%s", first, out)
 		}
 		saved, _ := loadProjectStack(envPath)
-		if saved.Name != "Ruby on Rails" {
+		if saved.Name != "Python" {
 			t.Errorf("entrada %q: escolha do menu deve ser gravada em project.env: %+v", first, saved)
 		}
 	}

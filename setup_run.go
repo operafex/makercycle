@@ -71,6 +71,13 @@ func runProjectSetupWith(reader *bufio.Reader, scout AgentBinding, defaultDocs s
 		logEvent("AVISO: stack não detectada automaticamente")
 	}
 
+	if shouldPromptDatabaseOnSetup(isGreenfieldProject("."), currentDatabase(projectEnvPath, os.Getenv)) {
+		if _, dbErr := chooseDatabase(reader, os.Stdout, projectEnvPath, detectedName, "", defaultPromptTimeout); dbErr != nil {
+			fmt.Printf("[AVISO] Não foi possível salvar MC_DATABASE: %v\n", dbErr)
+			logEvent("AVISO: falha ao salvar MC_DATABASE: %v", dbErr)
+		}
+	}
+
 	scoutStart := now()
 	stats, scoutErr := runScout(scout, targetDocsDir, existingDocs, detectedName, jsonMetrics)
 	tel.RecordScout(stats, now().Sub(scoutStart).Seconds(), scoutErr)

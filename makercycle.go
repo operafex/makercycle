@@ -322,6 +322,15 @@ func main() {
 	}
 
 	var totalTokens TokenStats
+	tracker := newStageTracker(os.Stdout)
+
+	if startStage <= 1 && shouldPromptDatabaseOnTask(currentDatabase(projectEnvPath, os.Getenv), task) {
+		if _, dbErr := chooseDatabase(reader, os.Stdout, projectEnvPath, stack.Name, task, defaultPromptTimeout); dbErr != nil {
+			fmt.Printf("[AVISO] Não foi possível salvar MC_DATABASE: %v\n", dbErr)
+			logEvent("AVISO: falha ao salvar MC_DATABASE: %v", dbErr)
+		}
+	}
+	database := currentDatabase(projectEnvPath, os.Getenv)
 
 	preflightSkills(stageSkills(startStage, planner, critic, auditor))
 
@@ -357,12 +366,13 @@ func main() {
 			RunPlanner: func(a int) AgentResult {
 				printBanner(fmt.Sprintf("ETAPA 1: PLAN — PLANNER (Tentativa %d/%d)", a, *maxAttempts),
 					fmt.Sprintf("Skill: %s | Modelo: %s (%s)", planner.Skill, planner.Model, planner.Bin))
-				prompt := buildPlannerPrompt(planner.Skill, docsDir, stack.Name, task, demandFile, refs, a)
+				prompt := withDatabaseContext(buildPlannerPrompt(planner.Skill, docsDir, stack.Name, task, demandFile, refs, a), database)
 				start := time.Now()
 				res := runAgentStep(planner, prompt, *jsonMetrics, authMode, omni)
 				recordEventTelemetry(runID, "S1", planner.Alias, res.Model, a, res.Stats, time.Since(start).Seconds())
 				if !res.Quota && res.Err == nil {
 					reportTokens(planner, res.Stats)
+					tracker.Finish("S1", time.Since(start), res.Stats)
 				}
 				return res
 			},
@@ -376,6 +386,7 @@ func main() {
 				recordEventTelemetry(runID, "S2", critic.Alias, res.Model, a, res.Stats, time.Since(start).Seconds())
 				if !res.Quota && res.Err == nil {
 					reportTokens(critic, res.Stats)
+					tracker.Finish("S2", time.Since(start), res.Stats)
 				}
 				return res
 			},
@@ -428,7 +439,7 @@ func main() {
 			}
 			printBanner(fmt.Sprintf("ETAPA 3: MAKE — MAKER (Tentativa %d/%d)", attempt, *maxAttempts), makerBanner)
 
-			execPrompt := buildMakerPrompt(makerSkills, docsDir, attempt)
+			execPrompt := withDatabaseContext(buildMakerPrompt(makerSkills, docsDir, attempt), database)
 
 			bStart := time.Now()
 			res := runAgentStep(maker, execPrompt, *jsonMetrics, authMode, omni)
@@ -441,11 +452,13 @@ func main() {
 				fatal("Falha na Etapa 3 (MAKER): %v (verifique MC_MAKER_MODEL/MC_MAKER_BIN em .makercycle/config/models.env)", res.Err)
 			}
 			reportTokens(maker, res.Stats)
+			tracker.Finish("S3", time.Since(bStart), res.Stats)
 		}
 
 		// ETAPA 4A & 4B — VERIFY
 		if shouldRunStage(4, startStage, attempt, firstAttempt) {
 			// ETAPA 4A — VERIFY: CHECK: Verificação Determinística
+			vStart := time.Now()
 			printBanner(fmt.Sprintf("ETAPA 4A: VERIFY: CHECK (Tentativa %d/%d)", attempt, *maxAttempts),
 				fmt.Sprintf("Runner Determinístico (%s)", stack.Name))
 			checksPassed = runDeterministicChecks(stack)
@@ -480,6 +493,7 @@ func main() {
 				fmt.Printf("[AVISO] AUDITOR não atualizou %s nesta tentativa; o relatório é de uma execução anterior.\n", secReportPath)
 			}
 			reportTokens(auditor, res.Stats)
+			tracker.Finish("S4B", time.Since(vStart), res.Stats)
 		}
 
 		// ETAPA 5 — GATE: GATEKEEPER
@@ -498,7 +512,7 @@ func main() {
 			}
 			printBanner(fmt.Sprintf("ETAPA 5: GATE — GATEKEEPER (Tentativa %d/%d)", attempt, *maxAttempts), gateBanner)
 
-			arbPrompt := buildGatekeeperPrompt(gateSkills, attempt, *maxAttempts)
+			arbPrompt := withDatabaseContext(buildGatekeeperPrompt(gateSkills, attempt, *maxAttempts), database)
 
 			aStart := time.Now()
 			res := runAgentStep(gatekeeper, arbPrompt, *jsonMetrics, authMode, omni)
@@ -511,6 +525,7 @@ func main() {
 				fatal("Falha na Etapa 5 (GATEKEEPER): %v", res.Err)
 			}
 			reportTokens(gatekeeper, res.Stats)
+			tracker.Finish("S5", time.Since(aStart), res.Stats)
 			fmt.Printf("[TOKENS ACUMULADOS NO MAKERCYCLE] %s\n", totalTokens.Format())
 			logEvent("TOKENS ACUMULADOS NO MAKERCYCLE: %s", totalTokens.Format())
 

@@ -297,7 +297,7 @@ func setupProjectEnv(envPath, root, docsDir, existingDocs string) (StackConfig, 
 }
 
 // confirmSetupStack pede confirmação da stack detectada no -setup e grava a escolha em project.env.
-// Sem stack detectada não há pergunta: apenas as chaves de documentação são gravadas.
+// Sem stack detectada abre o menu de presets (Enter/EOF = pular: só as chaves de documentação são gravadas).
 func confirmSetupStack(reader *bufio.Reader, out io.Writer, envPath, root, docsDir, existingDocs string) (StackConfig, bool, error) {
 	updates := map[string]string{
 		"MC_DOCS_DIR":      docsDir,
@@ -305,7 +305,21 @@ func confirmSetupStack(reader *bufio.Reader, out io.Writer, envPath, root, docsD
 	}
 	detected, ok := detectStack(root)
 	if !ok {
-		return StackConfig{}, false, writeProjectEnv(envPath, updates)
+		preset, chosen, err := selectStackPreset(reader, out)
+		if err != nil {
+			return StackConfig{}, false, err
+		}
+		if !chosen {
+			return StackConfig{}, false, writeProjectEnv(envPath, updates)
+		}
+		for k, v := range presetEnvValues(preset) {
+			updates[k] = v
+		}
+		if err := writeProjectEnv(envPath, updates); err != nil {
+			return StackConfig{}, false, err
+		}
+		fmt.Fprintf(out, "[STACK] Stack salva como padrão do projeto: %s\n", preset.Name)
+		return preset.StackConfig(), true, nil
 	}
 
 	fmt.Fprintf(out, "[STACK] Detectada: %s (testes: %s)\n", detected.Name, detected.TestCmd)
@@ -317,10 +331,13 @@ func confirmSetupStack(reader *bufio.Reader, out io.Writer, envPath, root, docsD
 	switch answer {
 	case "", "S", "s":
 	case "p", "P", "n", "N":
-		var err error
-		chosen, err = selectStack(reader, out, envPath)
+		preset, picked, err := selectStackPreset(reader, out)
 		if err != nil {
 			return StackConfig{}, false, err
+		}
+		if picked {
+			chosen = preset.StackConfig()
+			updates["MC_BUILD_CMD"] = preset.BuildCmd
 		}
 	default:
 		return StackConfig{}, false, fmt.Errorf("opção inválida %q: responda S, n ou p", answer)

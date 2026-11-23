@@ -40,13 +40,35 @@ func buildScoutPrompt(existingDocs, docsDir, detectedName string) string {
 	)
 }
 
+// buildScoutPromptFor estende buildScoutPrompt com o banco de dados (MC_DATABASE) e, em projeto novo,
+// com a instrução de gerar um PROJECT_CONTEXT.md inicial sem falhar por diretório vazio.
+func buildScoutPromptFor(existingDocs, docsDir, detectedName, database string, greenfield bool) string {
+	prompt := withDatabaseContext(buildScoutPrompt(existingDocs, docsDir, detectedName), database)
+	if !greenfield {
+		return prompt
+	}
+	stack, db := detectedName, strings.TrimSpace(database)
+	if stack == "" {
+		stack = "(a definir)"
+	}
+	if db == "" {
+		db = "(a definir)"
+	}
+	return prompt + fmt.Sprintf(" Projeto novo (greenfield): ainda não há código-fonte. Não falhe por diretório vazio: "+
+		"gere %s/PROJECT_CONTEXT.md inicial estruturado (visão geral, stack, banco de dados, comandos de build/teste/lint e convenções) "+
+		"com a stack '%s' e o banco de dados '%s' definidos.", docsDir, stack, db)
+}
+
 // runScoutAgent executa o SCOUT e valida que <docs>/PROJECT_CONTEXT.md foi gerado.
 func runScoutAgent(scout AgentBinding, docsDir, existingDocs, detectedName string, jsonMetrics bool) (TokenStats, error) {
-	stats, err := runAgent(scout, buildScoutPrompt(existingDocs, docsDir, detectedName), jsonMetrics)
+	start := time.Now()
+	prompt := buildScoutPromptFor(existingDocs, docsDir, detectedName, currentDatabase(projectEnvPath, os.Getenv), isGreenfieldProject("."))
+	stats, err := runAgent(scout, prompt, jsonMetrics)
 	if err != nil {
 		return stats, fmt.Errorf("Falha na Etapa 0 (SCOUT): %w", err)
 	}
 	reportTokens(scout, stats)
+	newStageTracker(os.Stdout).Finish("S0", time.Since(start), stats)
 
 	contextPath := filepath.Join(docsDir, "PROJECT_CONTEXT.md")
 	if info, statErr := os.Stat(contextPath); statErr != nil || info.IsDir() {
