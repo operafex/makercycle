@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,7 +23,9 @@ func fullAgentsMapFS() fstest.MapFS {
 	return m
 }
 
-// IF-H1: provisionInitAssets cria agentes, .gitkeep, models.env e .gitignore na ordem do contrato.
+// IF-H1: provisionInitAssets cria agentes, .gitkeep, models.env, secrets.env e .gitignore na ordem do contrato.
+// [REGRESSÃO JUSTIFICADA] 11 -> 12 resultados: o -init passa a reportar secrets.env
+// (docs/references/team-scale-and-regression.md §1). As posições anteriores a models.env não mudam.
 func TestProvisionInitAssetsFreshProject(t *testing.T) {
 	root := t.TempDir()
 	p := initPaths{Root: root, DocsDir: "docs", GlobalModelsEnv: ""}
@@ -30,8 +33,8 @@ func TestProvisionInitAssetsFreshProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provisionInitAssets: %v", err)
 	}
-	if len(res) != 11 {
-		t.Fatalf("len(res) = %d; want 11 (6 agentes + 3 .gitkeep + models.env + .gitignore): %+v", len(res), res)
+	if len(res) != 12 {
+		t.Fatalf("len(res) = %d; want 12 (6 agentes + 3 .gitkeep + models.env + secrets.env + .gitignore): %+v", len(res), res)
 	}
 	wantPaths := []string{
 		filepath.Join(root, ".makercycle", "agents", "00_SCOUT.md"),
@@ -39,9 +42,10 @@ func TestProvisionInitAssetsFreshProject(t *testing.T) {
 		filepath.Join(root, "docs", "demands", ".gitkeep"),
 		filepath.Join(root, "docs", "references", ".gitkeep"),
 		filepath.Join(root, ".makercycle", "config", "models.env"),
+		filepath.Join(root, ".makercycle", "config", "secrets.env"),
 		filepath.Join(root, ".gitignore"),
 	}
-	wantIdx := []int{0, 5, 6, 8, 9, 10}
+	wantIdx := []int{0, 5, 6, 8, 9, 10, 11}
 	for i, idx := range wantIdx {
 		if res[idx].Path != wantPaths[i] {
 			t.Errorf("res[%d].Path = %q; want %q", idx, res[idx].Path, wantPaths[i])
@@ -50,8 +54,14 @@ func TestProvisionInitAssetsFreshProject(t *testing.T) {
 	if res[9].Action != initActionFromEmbedded {
 		t.Errorf("models.env ação = %q; want %q", res[9].Action, initActionFromEmbedded)
 	}
-	if res[10].Action != initActionCreated {
-		t.Errorf(".gitignore ação = %q; want %q", res[10].Action, initActionCreated)
+	if res[10].Action != initActionMissing {
+		t.Errorf("secrets.env ação = %q; want %q (sem global)", res[10].Action, initActionMissing)
+	}
+	if isFile(filepath.Join(root, ".makercycle", "config", "secrets.env")) {
+		t.Error("secrets.env não deve ser criado sem global")
+	}
+	if res[11].Action != initActionCreated {
+		t.Errorf(".gitignore ação = %q; want %q", res[11].Action, initActionCreated)
 	}
 	for _, sub := range []string{"agents", "config", "state", "telemetry"} {
 		if !isDir(filepath.Join(root, ".makercycle", sub)) {
@@ -77,9 +87,16 @@ func TestProvisionInitAssetsSecondRunKeepsEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// [REGRESSÃO JUSTIFICADA] secrets.env sem global nunca é criado, logo segue "ausente na home"
+	// (não "mantido"); todos os demais artefatos continuam "mantido".
+	secrets := filepath.Join(root, ".makercycle", "config", "secrets.env")
 	for _, r := range res {
-		if r.Action != initActionKept {
-			t.Errorf("%s = %q; want %q", r.Path, r.Action, initActionKept)
+		want := initActionKept
+		if r.Path == secrets {
+			want = initActionMissing
+		}
+		if r.Action != want {
+			t.Errorf("%s = %q; want %q", r.Path, r.Action, want)
 		}
 	}
 }
@@ -294,5 +311,50 @@ func TestBuildScoutPromptMatchesLegacy(t *testing.T) {
 		if got, want := buildScoutPrompt(c[0], c[1], c[2]), legacyScoutPrompt(c[0], c[1], c[2]); got != want {
 			t.Errorf("buildScoutPrompt(%q,%q,%q) =\n%s\nwant\n%s", c[0], c[1], c[2], got, want)
 		}
+	}
+}
+
+// IF-E5: com secrets.env na home e projeto sem ele => cópia 0600; o existente no projeto nunca é sobrescrito.
+func TestProvisionInitAssetsInheritsGlobalSecrets(t *testing.T) {
+	root, home := t.TempDir(), t.TempDir()
+	writeFiles(t, home, map[string]string{".makercycle/config/secrets.env": "ANTHROPIC_API_KEY=sk-home\n"})
+	p := initPaths{Root: root, DocsDir: "docs", GlobalSecretsEnv: filepath.Join(home, ".makercycle", "config", "secrets.env")}
+	res, err := provisionInitAssets(p, fullAgentsMapFS(), []byte("X=1\n"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := filepath.Join(root, ".makercycle", "config", "secrets.env")
+	if res[10].Path != secrets || res[10].Action != initActionFromGlobal {
+		t.Errorf("res[10] = %+v; want {%s %s}", res[10], secrets, initActionFromGlobal)
+	}
+	if got := readString(t, secrets); got != "ANTHROPIC_API_KEY=sk-home\n" {
+		t.Errorf("secrets.env = %q", got)
+	}
+
+	writeFiles(t, home, map[string]string{".makercycle/config/secrets.env": "ANTHROPIC_API_KEY=sk-outra\n"})
+	res, err = provisionInitAssets(p, fullAgentsMapFS(), []byte("X=1\n"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res[10].Action != initActionKept {
+		t.Errorf("2ª execução (mesmo com force): ação = %q; want %q", res[10].Action, initActionKept)
+	}
+	if got := readString(t, secrets); got != "ANTHROPIC_API_KEY=sk-home\n" {
+		t.Errorf("secrets.env do projeto foi sobrescrito: %q", got)
+	}
+}
+
+// IF-X2: erro ao copiar o secrets.env global interrompe o -init com o caminho no erro.
+func TestProvisionInitAssetsSecretsErrorHasContext(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".makercycle", "config", "secrets.env", "x"), 0o755); err != nil {
+		t.Fatal(err) // secrets.env do projeto é um diretório não vazio e o global existe
+	}
+	home := t.TempDir()
+	writeFiles(t, home, map[string]string{"secrets.env": "K=1\n"})
+	p := initPaths{Root: root, DocsDir: "docs", GlobalSecretsEnv: filepath.Join(home, "secrets.env")}
+	_, err := provisionInitAssets(p, fullAgentsMapFS(), []byte("X=1\n"), false)
+	if err == nil || !strings.Contains(err.Error(), "secrets.env") {
+		t.Fatalf("esperava erro citando secrets.env; got %v", err)
 	}
 }

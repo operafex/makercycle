@@ -28,6 +28,7 @@ func isProviderKey(key string) bool {
 }
 
 // readProjectAPIKeys lê as chaves de API dos provedores configuradas em path (project.env).
+// Mantida como fallback legado: as chaves atuais ficam em secrets.env e chegam via os.Getenv (loadEnvLayers).
 // Sempre retorna um mapa não nil (vazio se o arquivo não existir ou se não houver chaves válidas).
 func readProjectAPIKeys(path string) (map[string]string, error) {
 	result := make(map[string]string)
@@ -124,7 +125,7 @@ func validateAuthConfig(authMode string, getenv func(string) string) error {
 				return nil
 			}
 		}
-		return errors.New("nenhuma API key encontrada: adicione ANTHROPIC_API_KEY, OPENAI_API_KEY ou GEMINI_API_KEY em .makercycle/config/project.env (MC_API_KEY também é aceita)")
+		return errors.New("nenhuma API key encontrada: adicione ANTHROPIC_API_KEY, OPENAI_API_KEY ou GEMINI_API_KEY em .makercycle/config/secrets.env (MC_API_KEY também é aceita)")
 	default:
 		return fmt.Errorf("modo de autenticação inválido: %q", authMode)
 	}
@@ -287,5 +288,5 @@ func modelsEnvKeyWarning(names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return "[AVISO] Chaves de API encontradas em .makercycle/config/models.env (versionado): " + strings.Join(names, ", ") + ". Mova-as para .makercycle/config/project.env (ignorado pelo git) e remova-as do models.env."
+	return "[AVISO] Chaves de API encontradas em .makercycle/config/models.env (versionado): " + strings.Join(names, ", ") + ". Mova-as para .makercycle/config/secrets.env (ignorado pelo git) e remova-as do models.env."
 }

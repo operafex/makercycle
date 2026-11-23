@@ -116,7 +116,12 @@ func runInit(opts initOptions) {
 		fmt.Printf("[AVISO] Herança global de models.env desativada: %v\n", err)
 	}
 
-	results, err := provisionInitAssets(initPaths{Root: ".", DocsDir: opts.DocsDir, GlobalModelsEnv: gp},
+	sp, err := globalSecretsEnvPath(home)
+	if err != nil {
+		sp = ""
+	}
+
+	results, err := provisionInitAssets(initPaths{Root: ".", DocsDir: opts.DocsDir, GlobalModelsEnv: gp, GlobalSecretsEnv: sp},
 		embeddedAgentsFS, embeddedModelsEnv, opts.Force)
 	if err != nil {
 		fatal("Erro ao provisionar o projeto: %v", err)
@@ -135,8 +140,10 @@ func runInit(opts initOptions) {
 		}
 	}
 
-	// models.env provisionado passa a valer para esta execução (flags explícitas prevalecem).
-	loadEnvFile(modelsEnvPath)
+	// project.env, models.env e secrets.env provisionados passam a valer para esta execução (flags explícitas prevalecem).
+	if err := loadEnvLayers(envLayerPaths); err != nil {
+		fmt.Printf("[AVISO] %v\n", err)
+	}
 	agents := make([]AgentBinding, len(opts.Agents))
 	for i, a := range opts.Agents {
 		agents[i] = refreshBindingFromEnv(a, os.Getenv, opts.SetFlags)

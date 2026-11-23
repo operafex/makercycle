@@ -167,10 +167,14 @@ func TestE2EInitInheritsGlobalModelsEnv(t *testing.T) {
 		t.Errorf("models.env = %q; want herdado da home", got)
 	}
 	gi := readString(t, filepath.Join(proj, ".gitignore"))
-	for _, e := range []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/project.env"} {
+	// [REGRESSÃO JUSTIFICADA] project.env deixou o .gitignore (versionado pela equipe); secrets.env entrou.
+	for _, e := range []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/secrets.env"} {
 		if !strings.Contains(gi, e) {
 			t.Errorf(".gitignore sem %q", e)
 		}
+	}
+	if strings.Contains(gi, ".makercycle/config/project.env") {
+		t.Errorf(".gitignore não deve mais ignorar project.env:\n%s", gi)
 	}
 	s, err := loadProjectStack(filepath.Join(proj, ".makercycle", "config", "project.env"))
 	if err != nil || s.Name != "Go" {
@@ -210,5 +214,56 @@ func TestE2EInitTemplateAndForce(t *testing.T) {
 	}
 	if isFile(filepath.Join(home, ".makercycle", "config", "models.env")) {
 		t.Error("-init não deve gravar na home sem -save-global")
+	}
+}
+
+// E2E-H8: -init herda ~/.makercycle/config/secrets.env (0600), a chave passa a valer na mesma execução
+// (o SCAN deixa de ser pulado por falta de chave) e o valor nunca aparece na saída nem nos logs.
+func TestE2EInitInheritsGlobalSecretsEnv(t *testing.T) {
+	bin := buildE2EBinary(t)
+	proj, home := t.TempDir(), t.TempDir()
+	writeFiles(t, proj, map[string]string{"go.mod": "module exemplo\n\ngo 1.22\n", "main.go": "package main\n\nfunc main() {}\n"})
+	const secret = "sk-e2e-home-0123456789"
+	writeFiles(t, home, map[string]string{".makercycle/config/secrets.env": "ANTHROPIC_API_KEY=" + secret + "\n"})
+
+	r := runE2E(t, bin, proj, home, "\n", "-init", "-docs-dir", "docs")
+
+	p := filepath.Join(proj, ".makercycle", "config", "secrets.env")
+	if got := readString(t, p); got != "ANTHROPIC_API_KEY="+secret+"\n" {
+		t.Fatalf("secrets.env não herdado da home:\n%s", r.Out)
+	}
+	if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("secrets.env deve ter permissão 0600: %v %v", fi, err)
+	}
+	if strings.Contains(r.Out, "nenhuma API key encontrada") {
+		t.Errorf("a chave herdada deveria satisfazer a auth na mesma execução:\n%s", r.Out)
+	}
+	if !strings.Contains(r.Out, "ETAPA 0: SCAN") {
+		t.Errorf("com código e chave herdada, o -init deveria tentar o SCAN:\n%s", r.Out)
+	}
+	if strings.Contains(r.Out, secret) {
+		t.Error("o valor da chave vazou na saída do -init")
+	}
+	logs, _ := os.ReadDir(filepath.Join(proj, "docs", "logs"))
+	for _, e := range logs {
+		if b, err := os.ReadFile(filepath.Join(proj, "docs", "logs", e.Name())); err == nil && strings.Contains(string(b), secret) {
+			t.Errorf("o valor da chave vazou em docs/logs/%s", e.Name())
+		}
+	}
+}
+
+// E2E-E5: sem secrets.env na home, nada é criado e o comportamento anterior (SCAN pulado sem chave) se mantém.
+func TestE2EInitWithoutGlobalSecretsEnv(t *testing.T) {
+	bin := buildE2EBinary(t)
+	proj, home := t.TempDir(), t.TempDir()
+	writeFiles(t, proj, map[string]string{"go.mod": "module exemplo\n\ngo 1.22\n", "main.go": "package main\n\nfunc main() {}\n"})
+
+	r := runE2E(t, bin, proj, home, "\n", "-init", "-docs-dir", "docs")
+
+	if isFile(filepath.Join(proj, ".makercycle", "config", "secrets.env")) {
+		t.Error("secrets.env não deve ser criado sem cópia global")
+	}
+	if !strings.Contains(r.Out, "nenhuma API key encontrada") {
+		t.Errorf("sem chave, o SCAN deve ser pulado com aviso:\n%s", r.Out)
 	}
 }

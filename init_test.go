@@ -362,9 +362,11 @@ func TestSaveGlobalModelsEnvEmptyGlobalErrors(t *testing.T) {
 	}
 }
 
-// IP-H7: entradas obrigatórias do .gitignore.
+// IP-H7: entradas obrigatórias do .gitignore — APENAS state/, telemetry/ e secrets.env.
+// [REGRESSÃO JUSTIFICADA] project.env saiu da lista: passa a ser versionado pela equipe
+// (docs/references/team-scale-and-regression.md §2). As chaves migram para secrets.env.
 func TestGitignoreEntriesContract(t *testing.T) {
-	want := []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/project.env"}
+	want := []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/secrets.env"}
 	if strings.Join(gitignoreEntries, "|") != strings.Join(want, "|") {
 		t.Errorf("gitignoreEntries = %v; want %v", gitignoreEntries, want)
 	}
@@ -380,7 +382,7 @@ func TestEnsureGitignoreEntriesCreatesFile(t *testing.T) {
 	if strings.Join(added, "|") != strings.Join(gitignoreEntries, "|") {
 		t.Errorf("added = %v; want %v", added, gitignoreEntries)
 	}
-	want := gitignoreHeader + "\n.makercycle/state/\n.makercycle/telemetry/\n.makercycle/config/project.env\n"
+	want := gitignoreHeader + "\n.makercycle/state/\n.makercycle/telemetry/\n.makercycle/config/secrets.env\n"
 	if got := readString(t, path); got != want {
 		t.Errorf(".gitignore =\n%q\nwant\n%q", got, want)
 	}
@@ -396,10 +398,10 @@ func TestEnsureGitignoreEntriesAppendsMissingOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{".makercycle/telemetry/", ".makercycle/config/project.env"}; strings.Join(added, "|") != strings.Join(want, "|") {
+	if want := []string{".makercycle/telemetry/", ".makercycle/config/secrets.env"}; strings.Join(added, "|") != strings.Join(want, "|") {
 		t.Errorf("added = %v; want %v", added, want)
 	}
-	want := "node_modules/\n.makercycle/state/\n\n" + gitignoreHeader + "\n.makercycle/telemetry/\n.makercycle/config/project.env\n"
+	want := "node_modules/\n.makercycle/state/\n\n" + gitignoreHeader + "\n.makercycle/telemetry/\n.makercycle/config/secrets.env\n"
 	if got := readString(t, path); got != want {
 		t.Errorf(".gitignore =\n%q\nwant\n%q", got, want)
 	}
@@ -427,7 +429,7 @@ func TestEnsureGitignoreEntriesIdempotent(t *testing.T) {
 // IP-E9: variações equivalentes (barra inicial, sem barra final, espaços, CRLF) contam como presentes.
 func TestEnsureGitignoreEntriesRecognizesEquivalents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".gitignore")
-	content := "/.makercycle/state/\r\n  .makercycle/telemetry  \r\n/.makercycle/config/project.env\r\n"
+	content := "/.makercycle/state/\r\n  .makercycle/telemetry  \r\n/.makercycle/config/secrets.env\r\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

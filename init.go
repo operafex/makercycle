@@ -26,7 +26,7 @@ const (
 const gitignoreHeader = "# MakerCycle (gerado por makercycle -init)"
 
 // gitignoreEntries são as entradas que o -init garante no .gitignore do projeto.
-var gitignoreEntries = []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/project.env"}
+var gitignoreEntries = []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/secrets.env"}
 
 // codeFileExtensions são as extensões que indicam a existência de código-fonte (SCAN do -init).
 var codeFileExtensions = []string{".go", ".rb", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".rs", ".php", ".cs", ".swift", ".c", ".h", ".cpp", ".ex", ".exs", ".scala", ".dart"}
@@ -40,9 +40,10 @@ type initFileResult struct {
 }
 
 type initPaths struct {
-	Root            string // raiz do projeto ("." no CLI)
-	DocsDir         string // relativo a Root
-	GlobalModelsEnv string // "" = sem home
+	Root             string // raiz do projeto ("." no CLI)
+	DocsDir          string // relativo a Root
+	GlobalModelsEnv  string // "" = sem home
+	GlobalSecretsEnv string // "" = sem home
 }
 
 // writeFileAtomic grava data em path via arquivo temporário na mesma pasta + rename.
@@ -269,6 +270,13 @@ func provisionInitAssets(p initPaths, agents fs.FS, modelsTemplate []byte, force
 		return all, fmt.Errorf("%s: %w", modelsPath, err)
 	}
 	all = append(all, mr)
+
+	secretsPath := filepath.Join(p.Root, secretsEnvPath)
+	sr, err := provisionSecretsEnv(secretsPath, p.GlobalSecretsEnv)
+	if err != nil {
+		return all, fmt.Errorf("%s: %w", secretsPath, err)
+	}
+	all = append(all, sr)
 
 	giPath := filepath.Join(p.Root, ".gitignore")
 	_, statErr := os.Stat(giPath)

@@ -64,10 +64,16 @@ func (t TokenStats) Format() string {
 func main() {
 	runID := newRunID()
 
-	loadEnvFile(modelsEnvPath)
-	loadEnvFile(".makercycle/config/project.env")
+	if err := loadEnvLayers(envLayerPaths); err != nil {
+		fmt.Printf("[AVISO] %v\n", err)
+	}
 	if b, err := os.ReadFile(modelsEnvPath); err == nil {
 		if msg := modelsEnvKeyWarning(apiKeysInModelsEnv(string(b))); msg != "" {
+			fmt.Fprintln(yellowWriter(os.Stdout), msg)
+		}
+	}
+	if b, err := os.ReadFile(projectEnvPath); err == nil {
+		if msg := projectEnvKeyWarning(apiKeysInModelsEnv(string(b))); msg != "" {
 			fmt.Fprintln(yellowWriter(os.Stdout), msg)
 		}
 	}

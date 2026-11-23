@@ -23,7 +23,7 @@ As Etapas 3 → 4 → 5 rodam em loop fechado até o GATEKEEPER aprovar, pedir c
 
 ## Requisitos
 
-- **Go 1.22+** *(somente para compilar do código-fonte ou rodar com `go run .`; não é necessário usando os instaladores)*
+- **Go 1.22+** *(somente para compilar do código-fonte ou rodar com `makercycle`; não é necessário usando os instaladores)*
 - **Git** (usado no controle de histórico e auditoria de `git diff`)
 - **Pelo menos uma CLI de agente de IA** instalada e configurada (ex.: `claude`, `gemini`, `codex`, `opencode` — configurável livremente por etapa em `.makercycle/config/models.env`)
 - **Node.js / `npx`** *(opcional)*: exigido apenas ao rodar `-init` para instalar automaticamente skills externas declaradas em `models.env`
@@ -88,7 +88,7 @@ O binário é autossuficiente: os contratos dos agentes (`.makercycle/agents/*.m
 1. cria `.makercycle/{agents,config,state,telemetry}/` e extrai os seis contratos de agente para `.makercycle/agents/`. Arquivos existentes são **mantidos**; o `-force` sobrescreve somente `.makercycle/agents/*.md`;
 2. cria `<docs>/demands/`, `<docs>/logs/` e `<docs>/references/` (cada uma com `.gitkeep`) e grava o próprio log em `<docs>/logs/`;
 3. provisiona `.makercycle/config/models.env`: um arquivo existente **nunca** é sobrescrito (nem com `-force`); caso contrário, é copiado de `~/.makercycle/config/models.env` quando este existir (herança global) ou gravado a partir do template embutido;
-4. acrescenta `.makercycle/state/`, `.makercycle/telemetry/` e `.makercycle/config/project.env` ao `.gitignore` (idempotente; entradas equivalentes como `/.makercycle/state` são reconhecidas);
+4. acrescenta `.makercycle/state/`, `.makercycle/telemetry/` e `.makercycle/config/secrets.env` ao `.gitignore` (idempotente; entradas equivalentes como `/.makercycle/state` são reconhecidas). Também copia `~/.makercycle/config/secrets.env` para o projeto quando ele ainda não tem um (`0600`; um arquivo já existente no projeto nunca é sobrescrito, nem com `-force`);
 5. verifica no `$PATH` os binários configurados (e o `git`), mostrando `[OK]` ou `[AUSENTE]`. O `npx` só é exigido quando há skills declaradas;
 6. instala as skills declaradas em `MC_*_SKILL` (todas, com `-force-skills`). Sem nenhuma declarada, a instalação de skills é ignorada. Uma skill conta como presente se existir uma pasta com o nome dela em `skills/`, `.agents/skills/`, `~/.claude/skills/` ou `~/.antigravity/skills/`, ou se o `skills-lock.json` a listar como origem;
 7. detecta e confirma a stack do projeto (salva em `.makercycle/config/project.env`);
@@ -104,7 +104,7 @@ Ajuste o `.makercycle/config/models.env` uma vez e reaproveite em todo projeto n
 makercycle -save-global   # copia .makercycle/config/models.env para ~/.makercycle/config/models.env
 ```
 
-O arquivo é gravado de forma atômica com permissão `0600` (pasta `0700`) e sobrescreve qualquer cópia global anterior. Projetos novos inicializados com `makercycle -init` herdam automaticamente o `~/.makercycle/config/models.env`. Nunca coloque chaves de API nesse arquivo — elas ficam em `.makercycle/config/project.env` (ignorado pelo Git).
+O arquivo é gravado de forma atômica com permissão `0600` (pasta `0700`) e sobrescreve qualquer cópia global anterior. Projetos novos inicializados com `makercycle -init` herdam automaticamente o `~/.makercycle/config/models.env`. Nunca coloque chaves de API nesse arquivo — elas ficam em `.makercycle/config/secrets.env` (ignorado pelo Git, `0600`).
 
 ### 2. Onboarding de projeto existente — `-setup` (Etapa 0)
 
@@ -146,7 +146,7 @@ Ao iniciar uma demanda com `-task`, `-stage` ou `-demand`, o `makercycle` usa a 
 Para trocar a stack, use `-select-stack`: ele abre o menu mesmo com um `project.env` válido e salva a escolha. O menu também abre automaticamente quando o `project.env` está ausente ou incompleto.
 
 ```bash
-go run . -task "Implementar autenticação JWT" -select-stack
+makercycle -task "Implementar autenticação JWT" -select-stack
 ```
 
 O menu do `-select-stack` é assim:
@@ -166,13 +166,13 @@ Pressionar Enter seleciona a opção `1`. Se `.makercycle/config/project.env` es
 ### 3. Iniciar nova demanda — `-task` (Etapas 1 a 5)
 
 ```bash
-go run . -task "Implementar autenticação JWT com refresh token"
+makercycle -task "Implementar autenticação JWT com refresh token"
 ```
 
 Enriqueça a demanda com material de `<docs>/references/` usando `-ref` (repetível). Cada arquivo é validado antes de tudo e entregue ao PLANNER como `@caminho`, então é lido antes do planejamento:
 
 ```bash
-go run . -task "Implementar autenticação JWT com refresh token" \
+makercycle -task "Implementar autenticação JWT com refresh token" \
   -ref auth-spec.md -ref docs/references/openapi.yaml
 ```
 
@@ -181,8 +181,8 @@ go run . -task "Implementar autenticação JWT com refresh token" \
 Comece de uma Etapa posterior com `-stage`:
 
 ```bash
-go run . -stage 2    # a partir de CHALLENGE (reaproveita .makercycle/state/PLAN.md / testes existentes)
-go run . -stage 3    # a partir de MAKE
+makercycle -stage 2    # a partir de CHALLENGE (reaproveita .makercycle/state/PLAN.md / testes existentes)
+makercycle -stage 3    # a partir de MAKE
 ```
 
 ### Loop autônomo de especificação
@@ -208,7 +208,7 @@ Você pode retomar execuções interrompidas ou vincular demandas existentes:
 Edite `.makercycle/config/models.env` ou sobrescreva via variáveis de ambiente (veja detalhes completos na seção [Personalização de Modelos](#personalização-de-modelos)):
 
 ```bash
-MC_MAKER_MODEL="GPT-OSS 120B (Medium)" go run . -task "Adicionar paginação por cursor"
+MC_MAKER_MODEL="GPT-OSS 120B (Medium)" makercycle -task "Adicionar paginação por cursor"
 ```
 
 Cada agente tem `MC_<AGENTE>_BIN`, `_MODEL` e `_ARGS` (flags extras do CLI, ex.: permissões necessárias no modo headless). `--dangerously-skip-permissions` desativa os prompts de permissão: use apenas em repositório confiável.
@@ -240,7 +240,7 @@ Além dos agentes, o `.makercycle/config/models.env` controla variáveis globais
 
 ### Autenticação e Fallback OmniRoute
 
-Por padrão (`MC_AUTH_MODE="api_key"`, definido em `.makercycle/config/models.env`), os agentes se autenticam com chaves de API dos provedores que residem **exclusivamente** em `.makercycle/config/project.env` (ignorado pelo git, gravado com permissão `0600`), isolando os custos por projeto:
+Por padrão (`MC_AUTH_MODE="api_key"`, definido em `.makercycle/config/models.env`), os agentes se autenticam com chaves de API dos provedores que residem **exclusivamente** em `.makercycle/config/secrets.env` (ignorado pelo git, gravado com permissão `0600`), isolando os custos por projeto:
 - `ANTHROPIC_API_KEY`: chave da Anthropic (`MC_API_KEY` é aceita como alias).
 - `OPENAI_API_KEY`: chave da OpenAI.
 - `GEMINI_API_KEY`: chave do Google Gemini.
@@ -252,9 +252,23 @@ Em caso de limite de cota ou rate limit, o `makercycle` realiza fallback transpa
 - `MC_OMNIROUTE_URL`: Endereço do servidor OmniRoute (padrão: `http://localhost:20128`).
 - `MC_OMNIROUTE_MODEL`: Modelo roteado via OmniRoute (padrão: `claude-sonnet-4-6`).
 
+### Segredos e precedência de configuração
+
+A configuração fica em três arquivos em `.makercycle/config/`:
+
+| Arquivo | Versionado? | Conteúdo |
+| :--- | :--- | :--- |
+| `project.env` | sim | Stack e comandos (`MC_STACK_NAME`, `MC_TEST_CMD`, …) e configurações de docs |
+| `models.env` | sim | Modelos, binários, argumentos e skills dos agentes (`MC_<AGENTE>_*`) |
+| `secrets.env` | **não** (ignorado pelo git, `0600`) | Somente chaves de API |
+
+No `makercycle -init`, o `~/.makercycle/config/secrets.env` é copiado para o projeto quando ele ainda não tem um, de modo que uma chave configurada uma vez na home vale em todo projeto novo. Os valores nunca são impressos nem registrados em log — apenas os nomes das variáveis aparecem nos avisos.
+
+As variáveis são carregadas nesta ordem, cada camada sobrepondo as anteriores: `project.env -> models.env -> secrets.env -> variáveis exportadas no SO`. Uma variável não vazia já exportada no shell sempre vence, e um valor vazio nunca apaga o de uma camada inferior. Se um arquivo versionado ainda contiver chaves de API, o `makercycle` avisa a cada execução e pede para movê-las ao `secrets.env`.
+
 ### Cross-Auditing (Multi-LLM)
 
-Utilize até 5 modelos diferentes nas etapas. É fortemente recomendado usar no mínimo 2 provedores distintos — ex.: Anthropic no MAKER e OpenAI/Gemini no GATEKEEPER — para evitar viés de confirmação na auditoria do código. Configure cada etapa via `MC_<AGENTE>_BIN` / `MC_<AGENTE>_MODEL` no `.makercycle/config/models.env` e guarde as chaves dos provedores correspondentes no `.makercycle/config/project.env`.
+Utilize até 5 modelos diferentes nas etapas. É fortemente recomendado usar no mínimo 2 provedores distintos — ex.: Anthropic no MAKER e OpenAI/Gemini no GATEKEEPER — para evitar viés de confirmação na auditoria do código. Configure cada etapa via `MC_<AGENTE>_BIN` / `MC_<AGENTE>_MODEL` no `.makercycle/config/models.env` e guarde as chaves dos provedores correspondentes no `.makercycle/config/secrets.env` (ignorado pelo git, `0600`).
 
 ### Formas de Personalização
 
@@ -269,12 +283,12 @@ A precedência de configuração segue: **Flags CLI > Variáveis de Ambiente > `
 
 2. **Sobrescrever via variáveis de ambiente** (ideal para testes pontuais sem alterar arquivos):
    ```bash
-   MC_MAKER_MODEL="GPT-OSS 120B (Medium)" go run . -task "Adicionar paginação por cursor"
+   MC_MAKER_MODEL="GPT-OSS 120B (Medium)" makercycle -task "Adicionar paginação por cursor"
    ```
 
 3. **Sobrescrever via flags do CLI**:
    ```bash
-   go run . -maker-model "Gemini 3.8 Flash (High)" -gatekeeper-model "Gemini 3.8 Flash (High)" -task "Adicionar paginação por cursor"
+   makercycle -maker-model "Gemini 3.8 Flash (High)" -gatekeeper-model "Gemini 3.8 Flash (High)" -task "Adicionar paginação por cursor"
    ```
 
 ## Estrutura gerada
@@ -288,7 +302,7 @@ A precedência de configuração segue: **Flags CLI > Variáveis de Ambiente > `
 └── references/            # material de referência (criada por -init / -setup)
 .makercycle/
 ├── agents/                # contratos dos agentes (00_SCOUT.md ... 05_GATEKEEPER.md)
-├── config/                # models.env (versionado), project.env (ignorado pelo git)
+├── config/                # models.env (versionado), project.env (versionado), secrets.env (ignorado pelo git)
 ├── state/                 # artefatos transitórios: PLAN, TEST_CASES, DECISION, ... (ignorado)
 └── telemetry/             # métricas em CSV (cabeçalho criado no primeiro uso, depois só append)
     ├── runs.csv           # uma linha por execução: tentativas, tokens in/out/total, status final

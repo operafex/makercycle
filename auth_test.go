@@ -172,15 +172,19 @@ func TestValidateAuthConfig(t *testing.T) {
 }
 
 func TestValidateAuthConfigMessageGuidesUser(t *testing.T) {
-	// VA-X5: mensagem clara instruindo project.env e as chaves dos provedores; sem LLM_API_KEY legada.
+	// VA-X5: mensagem clara instruindo secrets.env e as chaves dos provedores; sem LLM_API_KEY legada.
+	// [REGRESSÃO JUSTIFICADA] project.env passou a ser versionado: indicar project.env para chaves vazaria segredos.
 	err := validateAuthConfig("api_key", fakeGetenv(nil))
 	if err == nil {
 		t.Fatal("esperado erro sem API key")
 	}
-	for _, s := range []string{".makercycle/config/project.env", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
+	for _, s := range []string{".makercycle/config/secrets.env", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
 		if !strings.Contains(err.Error(), s) {
 			t.Fatalf("mensagem deve citar %q: %v", s, err)
 		}
+	}
+	if strings.Contains(err.Error(), "project.env") {
+		t.Fatalf("mensagem não deve mandar chaves para project.env (versionado): %v", err)
 	}
 	if strings.Contains(err.Error(), "LLM_API_KEY") {
 		t.Fatalf("mensagem não deve citar a chave legada LLM_API_KEY: %v", err)

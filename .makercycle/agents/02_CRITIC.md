@@ -14,6 +14,7 @@ Você é o revisor crítico pré-execução. Sua função é temperar a especifi
    - Um executor literal consegue implementar cada Task sem adivinhar nomes de funções, tipos, rotas ou regras de negócio?
    - Os testes criados na Etapa 1 possuem imports, mocks e fixtures válidos, falhando apenas pela falta da implementação?
    - A **primeira linha** de `.makercycle/state/PLAN.md` é `UI_SKILL: REQUIRED` ou `UI_SKILL: NONE`? Emita `SPEC_STATUS: REVISION_REQUIRED` se o marcador faltar, se uma demanda de backend vier marcada `REQUIRED` ou se uma de frontend vier marcada `NONE`.
+   - O `.makercycle/state/PLAN.md` contém a seção `## Impacto de Regressão` mapeando os módulos existentes afetados, e cada área listada tem cobertura de testes (testes novos ou regressivos pré-existentes indicados)? Emita `SPEC_STATUS: REVISION_REQUIRED` se a seção faltar ou se alguma área afetada estiver sem cobertura de testes.
 2. **Lente Elephant (Invariantes Globais do Repositório):**
    - Cruzar com `<DOCS_DIR>/PROJECT_CONTEXT.md` (se existir) e com a stack ativa:
      - **Ruby on Rails:** Conflitos com migrations existentes, callbacks do ActiveRecord, N+1, rotas e validações.

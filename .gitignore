@@ -1,7 +1,7 @@
 # Artefatos transitórios de cada execução do MakerCycle
 .makercycle/state/
 .makercycle/telemetry/
-.makercycle/config/project.env
+.makercycle/config/secrets.env
 
 #pastas de configuração
 .agents/

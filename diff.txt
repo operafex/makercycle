@@ -1,0 +1,763 @@
+diff --git a/.gitignore b/.gitignore
+index 2de9005..6723c77 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,7 +1,7 @@
+ # Artefatos transitórios de cada execução do MakerCycle
+ .makercycle/state/
+ .makercycle/telemetry/
+-.makercycle/config/project.env
++.makercycle/config/secrets.env
+ 
+ #pastas de configuração
+ .agents/
+diff --git a/.makercycle/agents/01_PLANNER.md b/.makercycle/agents/01_PLANNER.md
+index 2e8087e..0c569d0 100644
+--- a/.makercycle/agents/01_PLANNER.md
++++ b/.makercycle/agents/01_PLANNER.md
+@@ -15,6 +15,7 @@ Você é o arquiteto e especificador TDD. Sua missão é transformar a demanda r
+    - Arquivos exatos a criar/modificar.
+    - Assinaturas exatas (nomes de funções, parâmetros, retornos, structs/interfaces, rotas e status HTTP) — sem ambiguidade.
+    - Comportamento esperado e tratamento de erros.
++   - **Impacto de Regressão (obrigatório):** inclua no `.makercycle/state/PLAN.md` a seção `## Impacto de Regressão`, mapeando quais módulos existentes (arquivos, funções e testes) serão afetados pela entrega e quais testes regressivos pré-existentes os protegem. Se algum teste existente precisar mudar, registre ali a justificativa arquitetural.
+    - **Marcador de UI (obrigatório):** a **primeira linha** de `.makercycle/state/PLAN.md` deve ser exatamente `UI_SKILL: REQUIRED` se a demanda envolver interface de usuário, componentes visuais, estilos, UX, animações ou layouts; ou `UI_SKILL: NONE` para backend, CLI, infraestrutura ou testes puros, sem impacto visual. O orquestrador lê esse marcador para decidir se anexa a skill de UI ao MAKER e ao GATEKEEPER.
+ 3. **Matriz de Cenários (`.makercycle/state/TEST_CASES.md`):** Mapeie *Happy Path*, *Edge Cases* e *Error Handling* vinculados a cada Task.
+ 4. **Implementação dos Testes & Registro:** Escreva os testes automatizados cobrindo 100% dos cenários, rode o runner para confirmar o estado `RED` e anexe o resumo técnico do plano no arquivo da demanda em `<DOCS_DIR>/demands/`.
+diff --git a/.makercycle/agents/02_CRITIC.md b/.makercycle/agents/02_CRITIC.md
+index 3a59223..062eeb2 100644
+--- a/.makercycle/agents/02_CRITIC.md
++++ b/.makercycle/agents/02_CRITIC.md
+@@ -14,6 +14,7 @@ Você é o revisor crítico pré-execução. Sua função é temperar a especifi
+    - Um executor literal consegue implementar cada Task sem adivinhar nomes de funções, tipos, rotas ou regras de negócio?
+    - Os testes criados na Etapa 1 possuem imports, mocks e fixtures válidos, falhando apenas pela falta da implementação?
+    - A **primeira linha** de `.makercycle/state/PLAN.md` é `UI_SKILL: REQUIRED` ou `UI_SKILL: NONE`? Emita `SPEC_STATUS: REVISION_REQUIRED` se o marcador faltar, se uma demanda de backend vier marcada `REQUIRED` ou se uma de frontend vier marcada `NONE`.
++   - O `.makercycle/state/PLAN.md` contém a seção `## Impacto de Regressão` mapeando os módulos existentes afetados, e cada área listada tem cobertura de testes (testes novos ou regressivos pré-existentes indicados)? Emita `SPEC_STATUS: REVISION_REQUIRED` se a seção faltar ou se alguma área afetada estiver sem cobertura de testes.
+ 2. **Lente Elephant (Invariantes Globais do Repositório):**
+    - Cruzar com `<DOCS_DIR>/PROJECT_CONTEXT.md` (se existir) e com a stack ativa:
+      - **Ruby on Rails:** Conflitos com migrations existentes, callbacks do ActiveRecord, N+1, rotas e validações.
+diff --git a/.makercycle/agents/04_AUDITOR.md b/.makercycle/agents/04_AUDITOR.md
+index 3cf93ed..fb69c88 100644
+--- a/.makercycle/agents/04_AUDITOR.md
++++ b/.makercycle/agents/04_AUDITOR.md
+@@ -8,6 +8,9 @@ Você é o auditor de segurança automatizado (AppSec). Sua missão é inspecion
+ 1. **Somente Leitura no Código:** Nunca edite código de produção nem testes.
+ 2. **Saída Única:** Grave seu relatório exclusivamente em `.makercycle/state/SECURITY_REPORT.md`.
+ 
++## Regra Anti-Regressão
++É **PROIBIDO** o afrouxamento, a remoção ou o bypass de testes regressivos pré-existentes (asserções enfraquecidas, novos `t.Skip`/`skip`/`xit`, testes apagados, expectativas trocadas para casar com o código). Testes antigos só podem ser alterados com forte justificativa arquitetural documentada na seção `## Impacto de Regressão` do `.makercycle/state/PLAN.md`. Toda violação sem essa justificativa é um achado `HIGH` e exige `SEC_STATUS: VULNERABILITY_FOUND`.
++
+ ## Fluxo Obrigatório
+ 1. Execute `git diff` e `git status` para mapear todas as linhas adicionadas ou modificadas nesta tarefa.
+ 2. Aplique a skill de auditoria de segurança configurada focando em:
+diff --git a/.makercycle/agents/05_GATEKEEPER.md b/.makercycle/agents/05_GATEKEEPER.md
+index 117d51c..31f86f4 100644
+--- a/.makercycle/agents/05_GATEKEEPER.md
++++ b/.makercycle/agents/05_GATEKEEPER.md
+@@ -8,6 +8,9 @@ Você é o juiz final e *Circuit Breaker* do `makercycle`. Avalie o resultado t
+ 1. **Somente Leitura no Código:** Nunca modifique código de produção nem testes.
+ 2. **Saída Única:** Grave o veredito em `.makercycle/state/DECISION.md`.
+ 
++## Regra Anti-Regressão
++É **PROIBIDO** o afrouxamento, a remoção ou o bypass de testes regressivos pré-existentes (asserções enfraquecidas, novos `t.Skip`/`skip`/`xit`, testes apagados, expectativas trocadas para casar com o código). Testes antigos só podem ser alterados com forte justificativa arquitetural documentada na seção `## Impacto de Regressão` do `.makercycle/state/PLAN.md`. Toda violação sem essa justificativa exige `DECISION: RETRY_EXECUTION` (ou `DECISION: ESCALATE_PLANNER` se `ATTEMPT >= max_attempts`).
++
+ ## Fluxo Obrigatório
+ 1. Leia `.makercycle/state/PLAN.md`, `.makercycle/state/TEST_CASES.md`, `.makercycle/state/VERIFY_REPORT.md`, `.makercycle/state/SECURITY_REPORT.md` e execute `git diff`.
+ 2. Confirme que nenhum arquivo de teste foi adulterado na Etapa 3.
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 2e8087e..0c569d0 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -15,6 +15,7 @@ Você é o arquiteto e especificador TDD. Sua missão é transformar a demanda r
+    - Arquivos exatos a criar/modificar.
+    - Assinaturas exatas (nomes de funções, parâmetros, retornos, structs/interfaces, rotas e status HTTP) — sem ambiguidade.
+    - Comportamento esperado e tratamento de erros.
++   - **Impacto de Regressão (obrigatório):** inclua no `.makercycle/state/PLAN.md` a seção `## Impacto de Regressão`, mapeando quais módulos existentes (arquivos, funções e testes) serão afetados pela entrega e quais testes regressivos pré-existentes os protegem. Se algum teste existente precisar mudar, registre ali a justificativa arquitetural.
+    - **Marcador de UI (obrigatório):** a **primeira linha** de `.makercycle/state/PLAN.md` deve ser exatamente `UI_SKILL: REQUIRED` se a demanda envolver interface de usuário, componentes visuais, estilos, UX, animações ou layouts; ou `UI_SKILL: NONE` para backend, CLI, infraestrutura ou testes puros, sem impacto visual. O orquestrador lê esse marcador para decidir se anexa a skill de UI ao MAKER e ao GATEKEEPER.
+ 3. **Matriz de Cenários (`.makercycle/state/TEST_CASES.md`):** Mapeie *Happy Path*, *Edge Cases* e *Error Handling* vinculados a cada Task.
+ 4. **Implementação dos Testes & Registro:** Escreva os testes automatizados cobrindo 100% dos cenários, rode o runner para confirmar o estado `RED` e anexe o resumo técnico do plano no arquivo da demanda em `<DOCS_DIR>/demands/`.
+diff --git a/README.md b/README.md
+index 2b0dca6..e4f8013 100644
+--- a/README.md
++++ b/README.md
+@@ -23,7 +23,7 @@ Stages 3 → 4 → 5 run as a closed loop until the GATEKEEPER approves, asks fo
+ 
+ ## Requirements
+ 
+-- **Go 1.22+** *(only to build from source or run with `go run .`; not needed when using the installers)*
++- **Go 1.22+** *(only to build from source or run with `makercycle`; not needed when using the installers)*
+ - **Git** (used for repository state and `git diff` security audits)
+ - **At least one AI agent CLI** installed and configured (e.g., `claude`, `gemini`, `codex`, `opencode` — freely configurable per stage in `.makercycle/config/models.env`)
+ - **Node.js / `npx`** *(optional)*: required only when running `-init` to automatically install external skills configured in `models.env
+@@ -88,7 +88,7 @@ The binary is self-contained: the agent contracts (`.makercycle/agents/*.md`) an
+ 1. creates `.makercycle/{agents,config,state,telemetry}/` and extracts the six agent contracts to `.makercycle/agents/`. Existing files are **kept**; `-force` overwrites only `.makercycle/agents/*.md`;
+ 2. creates `<docs>/demands/`, `<docs>/logs/` and `<docs>/references/` (each with a `.gitkeep`) and writes its own log to `<docs>/logs/`;
+ 3. provisions `.makercycle/config/models.env`: an existing file is **never** overwritten (not even with `-force`); otherwise it is copied from `~/.makercycle/config/models.env` when that file exists (global inheritance), or written from the embedded template;
+-4. appends `.makercycle/state/`, `.makercycle/telemetry/` and `.makercycle/config/project.env` to `.gitignore` (idempotent; equivalent entries such as `/.makercycle/state` are recognized);
++4. appends `.makercycle/state/`, `.makercycle/telemetry/` and `.makercycle/config/secrets.env` to `.gitignore` (idempotent; equivalent entries such as `/.makercycle/state` are recognized). It also copies `~/.makercycle/config/secrets.env` into the project when it has none (`0600`; an existing project file is never overwritten, not even with `-force`);
+ 5. checks that the configured binaries (and `git`) are on your `$PATH` (`[OK]` / `[AUSENTE]`). `npx` is only required when skills are declared;
+ 6. installs the skills declared in `MC_*_SKILL` (all of them with `-force-skills`). If none is declared, skill installation is skipped. A skill counts as present if a folder with its name exists in `skills/`, `.agents/skills/`, `~/.claude/skills/` or `~/.antigravity/skills/`, or if `skills-lock.json` lists it as a source;
+ 7. detects and confirms the project stack (saved to `.makercycle/config/project.env`);
+@@ -104,7 +104,7 @@ Tune `.makercycle/config/models.env` once, then reuse it in every new project:
+ makercycle -save-global   # copies .makercycle/config/models.env to ~/.makercycle/config/models.env
+ ```
+ 
+-The file is written atomically with mode `0600` (folder `0700`) and overwrites any previous global copy. New projects initialized with `makercycle -init` inherit `~/.makercycle/config/models.env` automatically. Never put API keys in this file — they belong in `.makercycle/config/project.env` (ignored by Git).
++The file is written atomically with mode `0600` (folder `0700`) and overwrites any previous global copy. New projects initialized with `makercycle -init` inherit `~/.makercycle/config/models.env` automatically. Never put API keys in this file — they belong in `.makercycle/config/secrets.env` (ignored by Git, `0600`).
+ 
+ ### 2. Onboard an existing project — `-setup` (Stage 0)
+ 
+@@ -146,7 +146,7 @@ When you start a demand with `-task`, `-stage` or `-demand`, `makercycle` uses t
+ To change the stack, pass `-select-stack`: it opens the menu even when `project.env` is valid and saves your choice. The menu also opens automatically when `project.env` is missing or incomplete.
+ 
+ ```bash
+-go run . -task "Implement JWT authentication" -select-stack
++makercycle -task "Implement JWT authentication" -select-stack
+ ```
+ 
+ The `-select-stack` menu looks like this:
+@@ -166,13 +166,13 @@ Pressing Enter defaults to option `1`. If `.makercycle/config/project.env` is mi
+ ### 3. Run a new demand — `-task` (Stages 1 to 5)
+ 
+ ```bash
+-go run . -task "Implement JWT authentication with refresh tokens"
++makercycle -task "Implement JWT authentication with refresh tokens"
+ ```
+ 
+ Enrich the demand with material from `<docs>/references/` using `-ref` (repeatable). Each file is validated up front and handed to the PLANNER as `@path`, so it is read before planning:
+ 
+ ```bash
+-go run . -task "Implement JWT authentication with refresh tokens" \
++makercycle -task "Implement JWT authentication with refresh tokens" \
+   -ref auth-spec.md -ref docs/references/openapi.yaml
+ ```
+ 
+@@ -181,8 +181,8 @@ go run . -task "Implement JWT authentication with refresh tokens" \
+ Start from a later Stage with `-stage`:
+ 
+ ```bash
+-go run . -stage 2    # CHALLENGE onwards (reuses existing .makercycle/state/PLAN.md / tests)
+-go run . -stage 3    # MAKE onwards
++makercycle -stage 2    # CHALLENGE onwards (reuses existing .makercycle/state/PLAN.md / tests)
++makercycle -stage 3    # MAKE onwards
+ ```
+ 
+ ### Autonomous specification loop
+@@ -208,7 +208,7 @@ You can resume interrupted runs or connect existing demands:
+ Edit `.makercycle/config/models.env` or override with environment variables (see full details in the [Model Customization](#model-customization) section):
+ 
+ ```bash
+-MC_MAKER_MODEL="GPT-OSS 120B (Medium)" go run . -task "Add cursor pagination"
++MC_MAKER_MODEL="GPT-OSS 120B (Medium)" makercycle -task "Add cursor pagination"
+ ```
+ 
+ Each agent has `MC_<AGENT>_BIN`, `_MODEL` and `_ARGS` (extra CLI flags, e.g. permission flags needed for headless mode). `--dangerously-skip-permissions` disables permission prompts: use it only in trusted repositories.
+@@ -240,7 +240,7 @@ In addition to agents, `.makercycle/config/models.env` manages global loop setti
+ 
+ ### Authentication & OmniRoute Fallback
+ 
+-By default (`MC_AUTH_MODE="api_key"`, set in `.makercycle/config/models.env`), agents authenticate with provider API keys that live **exclusively** in `.makercycle/config/project.env` (git-ignored, written with `0600` permissions), isolating costs per project:
++By default (`MC_AUTH_MODE="api_key"`, set in `.makercycle/config/models.env`), agents authenticate with provider API keys that live **exclusively** in `.makercycle/config/secrets.env` (git-ignored, written with `0600` permissions), isolating costs per project:
+ - `ANTHROPIC_API_KEY`: Anthropic key (`MC_API_KEY` is accepted as an alias).
+ - `OPENAI_API_KEY`: OpenAI key.
+ - `GEMINI_API_KEY`: Google Gemini key.
+@@ -252,9 +252,23 @@ When token or quota limits are reached, `makercycle` can transparently route req
+ - `MC_OMNIROUTE_URL`: OmniRoute server address (default: `http://localhost:20128`).
+ - `MC_OMNIROUTE_MODEL`: Model routed via OmniRoute (default: `claude-sonnet-4-6`).
+ 
++### Secrets & configuration precedence
++
++Configuration lives in three files under `.makercycle/config/`:
++
++| File | Versioned? | Holds |
++| :--- | :--- | :--- |
++| `project.env` | yes | Stack and commands (`MC_STACK_NAME`, `MC_TEST_CMD`, …) and docs settings |
++| `models.env` | yes | Agent models, binaries, args and skills (`MC_<AGENT>_*`) |
++| `secrets.env` | **no** (git-ignored, `0600`) | API keys only |
++
++On `makercycle -init`, `~/.makercycle/config/secrets.env` is copied into the project when the project has none, so a key configured once in your home directory works in every new project. Values are never printed or logged — only variable names appear in warnings.
++
++Variables are loaded in this order, each layer overriding the previous ones: `project.env -> models.env -> secrets.env -> exported OS variables`. A non-empty variable already exported in your shell always wins, and an empty value never erases one from a lower layer. If a versioned file still contains API keys, `makercycle` warns you on every run and asks you to move them to `secrets.env`.
++
+ ### Cross-Auditing (Multi-LLM)
+ 
+-Use up to 5 different models across the stages. It is strongly recommended to use at least 2 distinct providers — e.g. Anthropic for the MAKER and OpenAI/Gemini for the GATEKEEPER — to avoid confirmation bias when auditing the code. Configure each stage through `MC_<AGENT>_BIN` / `MC_<AGENT>_MODEL` in `.makercycle/config/models.env`, and store the matching provider keys in `.makercycle/config/project.env`.
++Use up to 5 different models across the stages. It is strongly recommended to use at least 2 distinct providers — e.g. Anthropic for the MAKER and OpenAI/Gemini for the GATEKEEPER — to avoid confirmation bias when auditing the code. Configure each stage through `MC_<AGENT>_BIN` / `MC_<AGENT>_MODEL` in `.makercycle/config/models.env`, and store the matching provider keys in `.makercycle/config/secrets.env` (git-ignored, `0600`).
+ 
+ ### How to Customize
+ 
+@@ -269,12 +283,12 @@ Configuration precedence is: **CLI Flags > Environment Variables > `.makercycle/
+ 
+ 2. **Override via environment variables** (ideal for a single run without touching config files):
+    ```bash
+-   MC_MAKER_MODEL="GPT-OSS 120B (Medium)" go run . -task "Add cursor pagination"
++   MC_MAKER_MODEL="GPT-OSS 120B (Medium)" makercycle -task "Add cursor pagination"
+    ```
+ 
+ 3. **Override via CLI flags**:
+    ```bash
+-   go run . -maker-model "Gemini 3.8 Flash (High)" -gatekeeper-model "Gemini 3.8 Flash (High)" -task "Add cursor pagination"
++   makercycle -maker-model "Gemini 3.8 Flash (High)" -gatekeeper-model "Gemini 3.8 Flash (High)" -task "Add cursor pagination"
+    ```
+ 
+ ## Output layout
+@@ -288,7 +302,7 @@ Configuration precedence is: **CLI Flags > Environment Variables > `.makercycle/
+ └── references/            # reference material (created by -init / -setup)
+ .makercycle/
+ ├── agents/                # agent contracts (00_SCOUT.md ... 05_GATEKEEPER.md)
+-├── config/                # models.env (versioned), project.env (git-ignored)
++├── config/                # models.env (versioned), project.env (versioned), secrets.env (git-ignored)
+ ├── state/                 # transient artifacts: PLAN, TEST_CASES, DECISION, ... (git-ignored)
+ └── telemetry/             # CSV metrics (header written on first use, then append-only)
+     ├── runs.csv           # one row per run: attempts, tokens in/out/total, final status
+diff --git a/README.pt-BR.md b/README.pt-BR.md
+index cda0128..9e19ae5 100644
+--- a/README.pt-BR.md
++++ b/README.pt-BR.md
+@@ -23,7 +23,7 @@ As Etapas 3 → 4 → 5 rodam em loop fechado até o GATEKEEPER aprovar, pedir c
+ 
+ ## Requisitos
+ 
+-- **Go 1.22+** *(somente para compilar do código-fonte ou rodar com `go run .`; não é necessário usando os instaladores)*
++- **Go 1.22+** *(somente para compilar do código-fonte ou rodar com `makercycle`; não é necessário usando os instaladores)*
+ - **Git** (usado no controle de histórico e auditoria de `git diff`)
+ - **Pelo menos uma CLI de agente de IA** instalada e configurada (ex.: `claude`, `gemini`, `codex`, `opencode` — configurável livremente por etapa em `.makercycle/config/models.env`)
+ - **Node.js / `npx`** *(opcional)*: exigido apenas ao rodar `-init` para instalar automaticamente skills externas declaradas em `models.env`
+@@ -88,7 +88,7 @@ O binário é autossuficiente: os contratos dos agentes (`.makercycle/agents/*.m
+ 1. cria `.makercycle/{agents,config,state,telemetry}/` e extrai os seis contratos de agente para `.makercycle/agents/`. Arquivos existentes são **mantidos**; o `-force` sobrescreve somente `.makercycle/agents/*.md`;
+ 2. cria `<docs>/demands/`, `<docs>/logs/` e `<docs>/references/` (cada uma com `.gitkeep`) e grava o próprio log em `<docs>/logs/`;
+ 3. provisiona `.makercycle/config/models.env`: um arquivo existente **nunca** é sobrescrito (nem com `-force`); caso contrário, é copiado de `~/.makercycle/config/models.env` quando este existir (herança global) ou gravado a partir do template embutido;
+-4. acrescenta `.makercycle/state/`, `.makercycle/telemetry/` e `.makercycle/config/project.env` ao `.gitignore` (idempotente; entradas equivalentes como `/.makercycle/state` são reconhecidas);
++4. acrescenta `.makercycle/state/`, `.makercycle/telemetry/` e `.makercycle/config/secrets.env` ao `.gitignore` (idempotente; entradas equivalentes como `/.makercycle/state` são reconhecidas). Também copia `~/.makercycle/config/secrets.env` para o projeto quando ele ainda não tem um (`0600`; um arquivo já existente no projeto nunca é sobrescrito, nem com `-force`);
+ 5. verifica no `$PATH` os binários configurados (e o `git`), mostrando `[OK]` ou `[AUSENTE]`. O `npx` só é exigido quando há skills declaradas;
+ 6. instala as skills declaradas em `MC_*_SKILL` (todas, com `-force-skills`). Sem nenhuma declarada, a instalação de skills é ignorada. Uma skill conta como presente se existir uma pasta com o nome dela em `skills/`, `.agents/skills/`, `~/.claude/skills/` ou `~/.antigravity/skills/`, ou se o `skills-lock.json` a listar como origem;
+ 7. detecta e confirma a stack do projeto (salva em `.makercycle/config/project.env`);
+@@ -104,7 +104,7 @@ Ajuste o `.makercycle/config/models.env` uma vez e reaproveite em todo projeto n
+ makercycle -save-global   # copia .makercycle/config/models.env para ~/.makercycle/config/models.env
+ ```
+ 
+-O arquivo é gravado de forma atômica com permissão `0600` (pasta `0700`) e sobrescreve qualquer cópia global anterior. Projetos novos inicializados com `makercycle -init` herdam automaticamente o `~/.makercycle/config/models.env`. Nunca coloque chaves de API nesse arquivo — elas ficam em `.makercycle/config/project.env` (ignorado pelo Git).
++O arquivo é gravado de forma atômica com permissão `0600` (pasta `0700`) e sobrescreve qualquer cópia global anterior. Projetos novos inicializados com `makercycle -init` herdam automaticamente o `~/.makercycle/config/models.env`. Nunca coloque chaves de API nesse arquivo — elas ficam em `.makercycle/config/secrets.env` (ignorado pelo Git, `0600`).
+ 
+ ### 2. Onboarding de projeto existente — `-setup` (Etapa 0)
+ 
+@@ -146,7 +146,7 @@ Ao iniciar uma demanda com `-task`, `-stage` ou `-demand`, o `makercycle` usa a
+ Para trocar a stack, use `-select-stack`: ele abre o menu mesmo com um `project.env` válido e salva a escolha. O menu também abre automaticamente quando o `project.env` está ausente ou incompleto.
+ 
+ ```bash
+-go run . -task "Implementar autenticação JWT" -select-stack
++makercycle -task "Implementar autenticação JWT" -select-stack
+ ```
+ 
+ O menu do `-select-stack` é assim:
+@@ -166,13 +166,13 @@ Pressionar Enter seleciona a opção `1`. Se `.makercycle/config/project.env` es
+ ### 3. Iniciar nova demanda — `-task` (Etapas 1 a 5)
+ 
+ ```bash
+-go run . -task "Implementar autenticação JWT com refresh token"
++makercycle -task "Implementar autenticação JWT com refresh token"
+ ```
+ 
+ Enriqueça a demanda com material de `<docs>/references/` usando `-ref` (repetível). Cada arquivo é validado antes de tudo e entregue ao PLANNER como `@caminho`, então é lido antes do planejamento:
+ 
+ ```bash
+-go run . -task "Implementar autenticação JWT com refresh token" \
++makercycle -task "Implementar autenticação JWT com refresh token" \
+   -ref auth-spec.md -ref docs/references/openapi.yaml
+ ```
+ 
+@@ -181,8 +181,8 @@ go run . -task "Implementar autenticação JWT com refresh token" \
+ Comece de uma Etapa posterior com `-stage`:
+ 
+ ```bash
+-go run . -stage 2    # a partir de CHALLENGE (reaproveita .makercycle/state/PLAN.md / testes existentes)
+-go run . -stage 3    # a partir de MAKE
++makercycle -stage 2    # a partir de CHALLENGE (reaproveita .makercycle/state/PLAN.md / testes existentes)
++makercycle -stage 3    # a partir de MAKE
+ ```
+ 
+ ### Loop autônomo de especificação
+@@ -208,7 +208,7 @@ Você pode retomar execuções interrompidas ou vincular demandas existentes:
+ Edite `.makercycle/config/models.env` ou sobrescreva via variáveis de ambiente (veja detalhes completos na seção [Personalização de Modelos](#personalização-de-modelos)):
+ 
+ ```bash
+-MC_MAKER_MODEL="GPT-OSS 120B (Medium)" go run . -task "Adicionar paginação por cursor"
++MC_MAKER_MODEL="GPT-OSS 120B (Medium)" makercycle -task "Adicionar paginação por cursor"
+ ```
+ 
+ Cada agente tem `MC_<AGENTE>_BIN`, `_MODEL` e `_ARGS` (flags extras do CLI, ex.: permissões necessárias no modo headless). `--dangerously-skip-permissions` desativa os prompts de permissão: use apenas em repositório confiável.
+@@ -240,7 +240,7 @@ Além dos agentes, o `.makercycle/config/models.env` controla variáveis globais
+ 
+ ### Autenticação e Fallback OmniRoute
+ 
+-Por padrão (`MC_AUTH_MODE="api_key"`, definido em `.makercycle/config/models.env`), os agentes se autenticam com chaves de API dos provedores que residem **exclusivamente** em `.makercycle/config/project.env` (ignorado pelo git, gravado com permissão `0600`), isolando os custos por projeto:
++Por padrão (`MC_AUTH_MODE="api_key"`, definido em `.makercycle/config/models.env`), os agentes se autenticam com chaves de API dos provedores que residem **exclusivamente** em `.makercycle/config/secrets.env` (ignorado pelo git, gravado com permissão `0600`), isolando os custos por projeto:
+ - `ANTHROPIC_API_KEY`: chave da Anthropic (`MC_API_KEY` é aceita como alias).
+ - `OPENAI_API_KEY`: chave da OpenAI.
+ - `GEMINI_API_KEY`: chave do Google Gemini.
+@@ -252,9 +252,23 @@ Em caso de limite de cota ou rate limit, o `makercycle` realiza fallback transpa
+ - `MC_OMNIROUTE_URL`: Endereço do servidor OmniRoute (padrão: `http://localhost:20128`).
+ - `MC_OMNIROUTE_MODEL`: Modelo roteado via OmniRoute (padrão: `claude-sonnet-4-6`).
+ 
++### Segredos e precedência de configuração
++
++A configuração fica em três arquivos em `.makercycle/config/`:
++
++| Arquivo | Versionado? | Conteúdo |
++| :--- | :--- | :--- |
++| `project.env` | sim | Stack e comandos (`MC_STACK_NAME`, `MC_TEST_CMD`, …) e configurações de docs |
++| `models.env` | sim | Modelos, binários, argumentos e skills dos agentes (`MC_<AGENTE>_*`) |
++| `secrets.env` | **não** (ignorado pelo git, `0600`) | Somente chaves de API |
++
++No `makercycle -init`, o `~/.makercycle/config/secrets.env` é copiado para o projeto quando ele ainda não tem um, de modo que uma chave configurada uma vez na home vale em todo projeto novo. Os valores nunca são impressos nem registrados em log — apenas os nomes das variáveis aparecem nos avisos.
++
++As variáveis são carregadas nesta ordem, cada camada sobrepondo as anteriores: `project.env -> models.env -> secrets.env -> variáveis exportadas no SO`. Uma variável não vazia já exportada no shell sempre vence, e um valor vazio nunca apaga o de uma camada inferior. Se um arquivo versionado ainda contiver chaves de API, o `makercycle` avisa a cada execução e pede para movê-las ao `secrets.env`.
++
+ ### Cross-Auditing (Multi-LLM)
+ 
+-Utilize até 5 modelos diferentes nas etapas. É fortemente recomendado usar no mínimo 2 provedores distintos — ex.: Anthropic no MAKER e OpenAI/Gemini no GATEKEEPER — para evitar viés de confirmação na auditoria do código. Configure cada etapa via `MC_<AGENTE>_BIN` / `MC_<AGENTE>_MODEL` no `.makercycle/config/models.env` e guarde as chaves dos provedores correspondentes no `.makercycle/config/project.env`.
++Utilize até 5 modelos diferentes nas etapas. É fortemente recomendado usar no mínimo 2 provedores distintos — ex.: Anthropic no MAKER e OpenAI/Gemini no GATEKEEPER — para evitar viés de confirmação na auditoria do código. Configure cada etapa via `MC_<AGENTE>_BIN` / `MC_<AGENTE>_MODEL` no `.makercycle/config/models.env` e guarde as chaves dos provedores correspondentes no `.makercycle/config/secrets.env` (ignorado pelo git, `0600`).
+ 
+ ### Formas de Personalização
+ 
+@@ -269,12 +283,12 @@ A precedência de configuração segue: **Flags CLI > Variáveis de Ambiente > `
+ 
+ 2. **Sobrescrever via variáveis de ambiente** (ideal para testes pontuais sem alterar arquivos):
+    ```bash
+-   MC_MAKER_MODEL="GPT-OSS 120B (Medium)" go run . -task "Adicionar paginação por cursor"
++   MC_MAKER_MODEL="GPT-OSS 120B (Medium)" makercycle -task "Adicionar paginação por cursor"
+    ```
+ 
+ 3. **Sobrescrever via flags do CLI**:
+    ```bash
+-   go run . -maker-model "Gemini 3.8 Flash (High)" -gatekeeper-model "Gemini 3.8 Flash (High)" -task "Adicionar paginação por cursor"
++   makercycle -maker-model "Gemini 3.8 Flash (High)" -gatekeeper-model "Gemini 3.8 Flash (High)" -task "Adicionar paginação por cursor"
+    ```
+ 
+ ## Estrutura gerada
+@@ -288,7 +302,7 @@ A precedência de configuração segue: **Flags CLI > Variáveis de Ambiente > `
+ └── references/            # material de referência (criada por -init / -setup)
+ .makercycle/
+ ├── agents/                # contratos dos agentes (00_SCOUT.md ... 05_GATEKEEPER.md)
+-├── config/                # models.env (versionado), project.env (ignorado pelo git)
++├── config/                # models.env (versionado), project.env (versionado), secrets.env (ignorado pelo git)
+ ├── state/                 # artefatos transitórios: PLAN, TEST_CASES, DECISION, ... (ignorado)
+ └── telemetry/             # métricas em CSV (cabeçalho criado no primeiro uso, depois só append)
+     ├── runs.csv           # uma linha por execução: tentativas, tokens in/out/total, status final
+diff --git a/auth.go b/auth.go
+index 7b54df7..94793ec 100644
+--- a/auth.go
++++ b/auth.go
+@@ -28,6 +28,7 @@ func isProviderKey(key string) bool {
+ }
+ 
+ // readProjectAPIKeys lê as chaves de API dos provedores configuradas em path (project.env).
++// Mantida como fallback legado: as chaves atuais ficam em secrets.env e chegam via os.Getenv (loadEnvLayers).
+ // Sempre retorna um mapa não nil (vazio se o arquivo não existir ou se não houver chaves válidas).
+ func readProjectAPIKeys(path string) (map[string]string, error) {
+ 	result := make(map[string]string)
+@@ -124,7 +125,7 @@ func validateAuthConfig(authMode string, getenv func(string) string) error {
+ 				return nil
+ 			}
+ 		}
+-		return errors.New("nenhuma API key encontrada: adicione ANTHROPIC_API_KEY, OPENAI_API_KEY ou GEMINI_API_KEY em .makercycle/config/project.env (MC_API_KEY também é aceita)")
++		return errors.New("nenhuma API key encontrada: adicione ANTHROPIC_API_KEY, OPENAI_API_KEY ou GEMINI_API_KEY em .makercycle/config/secrets.env (MC_API_KEY também é aceita)")
+ 	default:
+ 		return fmt.Errorf("modo de autenticação inválido: %q", authMode)
+ 	}
+@@ -287,5 +288,5 @@ func modelsEnvKeyWarning(names []string) string {
+ 	if len(names) == 0 {
+ 		return ""
+ 	}
+-	return "[AVISO] Chaves de API encontradas em .makercycle/config/models.env (versionado): " + strings.Join(names, ", ") + ". Mova-as para .makercycle/config/project.env (ignorado pelo git) e remova-as do models.env."
++	return "[AVISO] Chaves de API encontradas em .makercycle/config/models.env (versionado): " + strings.Join(names, ", ") + ". Mova-as para .makercycle/config/secrets.env (ignorado pelo git) e remova-as do models.env."
+ }
+diff --git a/auth_test.go b/auth_test.go
+index c2212a3..775e924 100644
+--- a/auth_test.go
++++ b/auth_test.go
+@@ -172,16 +172,20 @@ func TestValidateAuthConfig(t *testing.T) {
+ }
+ 
+ func TestValidateAuthConfigMessageGuidesUser(t *testing.T) {
+-	// VA-X5: mensagem clara instruindo project.env e as chaves dos provedores; sem LLM_API_KEY legada.
++	// VA-X5: mensagem clara instruindo secrets.env e as chaves dos provedores; sem LLM_API_KEY legada.
++	// [REGRESSÃO JUSTIFICADA] project.env passou a ser versionado: indicar project.env para chaves vazaria segredos.
+ 	err := validateAuthConfig("api_key", fakeGetenv(nil))
+ 	if err == nil {
+ 		t.Fatal("esperado erro sem API key")
+ 	}
+-	for _, s := range []string{".makercycle/config/project.env", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
++	for _, s := range []string{".makercycle/config/secrets.env", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
+ 		if !strings.Contains(err.Error(), s) {
+ 			t.Fatalf("mensagem deve citar %q: %v", s, err)
+ 		}
+ 	}
++	if strings.Contains(err.Error(), "project.env") {
++		t.Fatalf("mensagem não deve mandar chaves para project.env (versionado): %v", err)
++	}
+ 	if strings.Contains(err.Error(), "LLM_API_KEY") {
+ 		t.Fatalf("mensagem não deve citar a chave legada LLM_API_KEY: %v", err)
+ 	}
+diff --git a/cli_e2e_test.go b/cli_e2e_test.go
+index 45f514a..c0db63d 100644
+--- a/cli_e2e_test.go
++++ b/cli_e2e_test.go
+@@ -167,11 +167,15 @@ func TestE2EInitInheritsGlobalModelsEnv(t *testing.T) {
+ 		t.Errorf("models.env = %q; want herdado da home", got)
+ 	}
+ 	gi := readString(t, filepath.Join(proj, ".gitignore"))
+-	for _, e := range []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/project.env"} {
++	// [REGRESSÃO JUSTIFICADA] project.env deixou o .gitignore (versionado pela equipe); secrets.env entrou.
++	for _, e := range []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/secrets.env"} {
+ 		if !strings.Contains(gi, e) {
+ 			t.Errorf(".gitignore sem %q", e)
+ 		}
+ 	}
++	if strings.Contains(gi, ".makercycle/config/project.env") {
++		t.Errorf(".gitignore não deve mais ignorar project.env:\n%s", gi)
++	}
+ 	s, err := loadProjectStack(filepath.Join(proj, ".makercycle", "config", "project.env"))
+ 	if err != nil || s.Name != "Go" {
+ 		t.Errorf("stack confirmada = %+v (err %v); want Go\n%s", s, err, r.Out)
+@@ -212,3 +216,54 @@ func TestE2EInitTemplateAndForce(t *testing.T) {
+ 		t.Error("-init não deve gravar na home sem -save-global")
+ 	}
+ }
++
++// E2E-H8: -init herda ~/.makercycle/config/secrets.env (0600), a chave passa a valer na mesma execução
++// (o SCAN deixa de ser pulado por falta de chave) e o valor nunca aparece na saída nem nos logs.
++func TestE2EInitInheritsGlobalSecretsEnv(t *testing.T) {
++	bin := buildE2EBinary(t)
++	proj, home := t.TempDir(), t.TempDir()
++	writeFiles(t, proj, map[string]string{"go.mod": "module exemplo\n\ngo 1.22\n", "main.go": "package main\n\nfunc main() {}\n"})
++	const secret = "sk-e2e-home-0123456789"
++	writeFiles(t, home, map[string]string{".makercycle/config/secrets.env": "ANTHROPIC_API_KEY=" + secret + "\n"})
++
++	r := runE2E(t, bin, proj, home, "\n", "-init", "-docs-dir", "docs")
++
++	p := filepath.Join(proj, ".makercycle", "config", "secrets.env")
++	if got := readString(t, p); got != "ANTHROPIC_API_KEY="+secret+"\n" {
++		t.Fatalf("secrets.env não herdado da home:\n%s", r.Out)
++	}
++	if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
++		t.Errorf("secrets.env deve ter permissão 0600: %v %v", fi, err)
++	}
++	if strings.Contains(r.Out, "nenhuma API key encontrada") {
++		t.Errorf("a chave herdada deveria satisfazer a auth na mesma execução:\n%s", r.Out)
++	}
++	if !strings.Contains(r.Out, "ETAPA 0: SCAN") {
++		t.Errorf("com código e chave herdada, o -init deveria tentar o SCAN:\n%s", r.Out)
++	}
++	if strings.Contains(r.Out, secret) {
++		t.Error("o valor da chave vazou na saída do -init")
++	}
++	logs, _ := os.ReadDir(filepath.Join(proj, "docs", "logs"))
++	for _, e := range logs {
++		if b, err := os.ReadFile(filepath.Join(proj, "docs", "logs", e.Name())); err == nil && strings.Contains(string(b), secret) {
++			t.Errorf("o valor da chave vazou em docs/logs/%s", e.Name())
++		}
++	}
++}
++
++// E2E-E5: sem secrets.env na home, nada é criado e o comportamento anterior (SCAN pulado sem chave) se mantém.
++func TestE2EInitWithoutGlobalSecretsEnv(t *testing.T) {
++	bin := buildE2EBinary(t)
++	proj, home := t.TempDir(), t.TempDir()
++	writeFiles(t, proj, map[string]string{"go.mod": "module exemplo\n\ngo 1.22\n", "main.go": "package main\n\nfunc main() {}\n"})
++
++	r := runE2E(t, bin, proj, home, "\n", "-init", "-docs-dir", "docs")
++
++	if isFile(filepath.Join(proj, ".makercycle", "config", "secrets.env")) {
++		t.Error("secrets.env não deve ser criado sem cópia global")
++	}
++	if !strings.Contains(r.Out, "nenhuma API key encontrada") {
++		t.Errorf("sem chave, o SCAN deve ser pulado com aviso:\n%s", r.Out)
++	}
++}
+diff --git a/docs/demands/INDEX.md b/docs/demands/INDEX.md
+index 5726bf0..5107d06 100644
+--- a/docs/demands/INDEX.md
++++ b/docs/demands/INDEX.md
+@@ -14,3 +14,4 @@
+ | 2026-11-19 | Go | Implementar distribuição multiplataforma com embed, -init unificado com herança global de models.env, GitHub Release workflow e instaladores install.sh/install.ps1 | [`2026-11-19-implementar-distribuição-multiplataforma-com.md`](2026-11-19-implementar-distribuição-multiplataforma-com.md) | `APPROVED` |
+ | 2026-11-20 | Go | Registrar telemetria S0 no -setup e atualizar READMEs com makercycle -setup e configuração de PATH pós go install | [`2026-11-20-registrar-telemetria-s0-no-setup-e-atualizar.md`](2026-11-20-registrar-telemetria-s0-no-setup-e-atualizar.md) | `APPROVED` |
+ | 2026-11-22 | Go | Implementar suporte a skill condicional de UI e múltiplas skills | [`2026-11-22-implementar-suporte-a-skill-condicional-de-ui.md`](2026-11-22-implementar-suporte-a-skill-condicional-de-ui.md) | `APPROVED` |
++| 2026-11-23 | Go | Implementar suporte ao arquivo secrets.env, remover project.env do gitignore e aplicar regras anti-regressão nos contratos dos agentes | [`2026-11-23-implementar-suporte-ao-arquivo-secrets-env-re.md`](2026-11-23-implementar-suporte-ao-arquivo-secrets-env-re.md) | `IN_PROGRESS` |
+diff --git a/init.go b/init.go
+index c738a8b..09ac865 100644
+--- a/init.go
++++ b/init.go
+@@ -26,7 +26,7 @@ const (
+ const gitignoreHeader = "# MakerCycle (gerado por makercycle -init)"
+ 
+ // gitignoreEntries são as entradas que o -init garante no .gitignore do projeto.
+-var gitignoreEntries = []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/project.env"}
++var gitignoreEntries = []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/secrets.env"}
+ 
+ // codeFileExtensions são as extensões que indicam a existência de código-fonte (SCAN do -init).
+ var codeFileExtensions = []string{".go", ".rb", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".rs", ".php", ".cs", ".swift", ".c", ".h", ".cpp", ".ex", ".exs", ".scala", ".dart"}
+@@ -40,9 +40,10 @@ type initFileResult struct {
+ }
+ 
+ type initPaths struct {
+-	Root            string // raiz do projeto ("." no CLI)
+-	DocsDir         string // relativo a Root
+-	GlobalModelsEnv string // "" = sem home
++	Root             string // raiz do projeto ("." no CLI)
++	DocsDir          string // relativo a Root
++	GlobalModelsEnv  string // "" = sem home
++	GlobalSecretsEnv string // "" = sem home
+ }
+ 
+ // writeFileAtomic grava data em path via arquivo temporário na mesma pasta + rename.
+@@ -270,6 +271,13 @@ func provisionInitAssets(p initPaths, agents fs.FS, modelsTemplate []byte, force
+ 	}
+ 	all = append(all, mr)
+ 
++	secretsPath := filepath.Join(p.Root, secretsEnvPath)
++	sr, err := provisionSecretsEnv(secretsPath, p.GlobalSecretsEnv)
++	if err != nil {
++		return all, fmt.Errorf("%s: %w", secretsPath, err)
++	}
++	all = append(all, sr)
++
+ 	giPath := filepath.Join(p.Root, ".gitignore")
+ 	_, statErr := os.Stat(giPath)
+ 	existed := statErr == nil
+diff --git a/init_flow_test.go b/init_flow_test.go
+index 683bce4..79df498 100644
+--- a/init_flow_test.go
++++ b/init_flow_test.go
+@@ -2,6 +2,7 @@ package main
+ 
+ import (
+ 	"fmt"
++	"os"
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
+@@ -22,7 +23,9 @@ func fullAgentsMapFS() fstest.MapFS {
+ 	return m
+ }
+ 
+-// IF-H1: provisionInitAssets cria agentes, .gitkeep, models.env e .gitignore na ordem do contrato.
++// IF-H1: provisionInitAssets cria agentes, .gitkeep, models.env, secrets.env e .gitignore na ordem do contrato.
++// [REGRESSÃO JUSTIFICADA] 11 -> 12 resultados: o -init passa a reportar secrets.env
++// (docs/references/team-scale-and-regression.md §1). As posições anteriores a models.env não mudam.
+ func TestProvisionInitAssetsFreshProject(t *testing.T) {
+ 	root := t.TempDir()
+ 	p := initPaths{Root: root, DocsDir: "docs", GlobalModelsEnv: ""}
+@@ -30,8 +33,8 @@ func TestProvisionInitAssetsFreshProject(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatalf("provisionInitAssets: %v", err)
+ 	}
+-	if len(res) != 11 {
+-		t.Fatalf("len(res) = %d; want 11 (6 agentes + 3 .gitkeep + models.env + .gitignore): %+v", len(res), res)
++	if len(res) != 12 {
++		t.Fatalf("len(res) = %d; want 12 (6 agentes + 3 .gitkeep + models.env + secrets.env + .gitignore): %+v", len(res), res)
+ 	}
+ 	wantPaths := []string{
+ 		filepath.Join(root, ".makercycle", "agents", "00_SCOUT.md"),
+@@ -39,9 +42,10 @@ func TestProvisionInitAssetsFreshProject(t *testing.T) {
+ 		filepath.Join(root, "docs", "demands", ".gitkeep"),
+ 		filepath.Join(root, "docs", "references", ".gitkeep"),
+ 		filepath.Join(root, ".makercycle", "config", "models.env"),
++		filepath.Join(root, ".makercycle", "config", "secrets.env"),
+ 		filepath.Join(root, ".gitignore"),
+ 	}
+-	wantIdx := []int{0, 5, 6, 8, 9, 10}
++	wantIdx := []int{0, 5, 6, 8, 9, 10, 11}
+ 	for i, idx := range wantIdx {
+ 		if res[idx].Path != wantPaths[i] {
+ 			t.Errorf("res[%d].Path = %q; want %q", idx, res[idx].Path, wantPaths[i])
+@@ -50,8 +54,14 @@ func TestProvisionInitAssetsFreshProject(t *testing.T) {
+ 	if res[9].Action != initActionFromEmbedded {
+ 		t.Errorf("models.env ação = %q; want %q", res[9].Action, initActionFromEmbedded)
+ 	}
+-	if res[10].Action != initActionCreated {
+-		t.Errorf(".gitignore ação = %q; want %q", res[10].Action, initActionCreated)
++	if res[10].Action != initActionMissing {
++		t.Errorf("secrets.env ação = %q; want %q (sem global)", res[10].Action, initActionMissing)
++	}
++	if isFile(filepath.Join(root, ".makercycle", "config", "secrets.env")) {
++		t.Error("secrets.env não deve ser criado sem global")
++	}
++	if res[11].Action != initActionCreated {
++		t.Errorf(".gitignore ação = %q; want %q", res[11].Action, initActionCreated)
+ 	}
+ 	for _, sub := range []string{"agents", "config", "state", "telemetry"} {
+ 		if !isDir(filepath.Join(root, ".makercycle", sub)) {
+@@ -77,9 +87,16 @@ func TestProvisionInitAssetsSecondRunKeepsEverything(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
++	// [REGRESSÃO JUSTIFICADA] secrets.env sem global nunca é criado, logo segue "ausente na home"
++	// (não "mantido"); todos os demais artefatos continuam "mantido".
++	secrets := filepath.Join(root, ".makercycle", "config", "secrets.env")
+ 	for _, r := range res {
+-		if r.Action != initActionKept {
+-			t.Errorf("%s = %q; want %q", r.Path, r.Action, initActionKept)
++		want := initActionKept
++		if r.Path == secrets {
++			want = initActionMissing
++		}
++		if r.Action != want {
++			t.Errorf("%s = %q; want %q", r.Path, r.Action, want)
+ 		}
+ 	}
+ }
+@@ -296,3 +313,48 @@ func TestBuildScoutPromptMatchesLegacy(t *testing.T) {
+ 		}
+ 	}
+ }
++
++// IF-E5: com secrets.env na home e projeto sem ele => cópia 0600; o existente no projeto nunca é sobrescrito.
++func TestProvisionInitAssetsInheritsGlobalSecrets(t *testing.T) {
++	root, home := t.TempDir(), t.TempDir()
++	writeFiles(t, home, map[string]string{".makercycle/config/secrets.env": "ANTHROPIC_API_KEY=sk-home\n"})
++	p := initPaths{Root: root, DocsDir: "docs", GlobalSecretsEnv: filepath.Join(home, ".makercycle", "config", "secrets.env")}
++	res, err := provisionInitAssets(p, fullAgentsMapFS(), []byte("X=1\n"), false)
++	if err != nil {
++		t.Fatal(err)
++	}
++	secrets := filepath.Join(root, ".makercycle", "config", "secrets.env")
++	if res[10].Path != secrets || res[10].Action != initActionFromGlobal {
++		t.Errorf("res[10] = %+v; want {%s %s}", res[10], secrets, initActionFromGlobal)
++	}
++	if got := readString(t, secrets); got != "ANTHROPIC_API_KEY=sk-home\n" {
++		t.Errorf("secrets.env = %q", got)
++	}
++
++	writeFiles(t, home, map[string]string{".makercycle/config/secrets.env": "ANTHROPIC_API_KEY=sk-outra\n"})
++	res, err = provisionInitAssets(p, fullAgentsMapFS(), []byte("X=1\n"), true)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if res[10].Action != initActionKept {
++		t.Errorf("2ª execução (mesmo com force): ação = %q; want %q", res[10].Action, initActionKept)
++	}
++	if got := readString(t, secrets); got != "ANTHROPIC_API_KEY=sk-home\n" {
++		t.Errorf("secrets.env do projeto foi sobrescrito: %q", got)
++	}
++}
++
++// IF-X2: erro ao copiar o secrets.env global interrompe o -init com o caminho no erro.
++func TestProvisionInitAssetsSecretsErrorHasContext(t *testing.T) {
++	root := t.TempDir()
++	if err := os.MkdirAll(filepath.Join(root, ".makercycle", "config", "secrets.env", "x"), 0o755); err != nil {
++		t.Fatal(err) // secrets.env do projeto é um diretório não vazio e o global existe
++	}
++	home := t.TempDir()
++	writeFiles(t, home, map[string]string{"secrets.env": "K=1\n"})
++	p := initPaths{Root: root, DocsDir: "docs", GlobalSecretsEnv: filepath.Join(home, "secrets.env")}
++	_, err := provisionInitAssets(p, fullAgentsMapFS(), []byte("X=1\n"), false)
++	if err == nil || !strings.Contains(err.Error(), "secrets.env") {
++		t.Fatalf("esperava erro citando secrets.env; got %v", err)
++	}
++}
+diff --git a/init_run.go b/init_run.go
+index 2e7a2da..cbdd13b 100644
+--- a/init_run.go
++++ b/init_run.go
+@@ -116,7 +116,12 @@ func runInit(opts initOptions) {
+ 		fmt.Printf("[AVISO] Herança global de models.env desativada: %v\n", err)
+ 	}
+ 
+-	results, err := provisionInitAssets(initPaths{Root: ".", DocsDir: opts.DocsDir, GlobalModelsEnv: gp},
++	sp, err := globalSecretsEnvPath(home)
++	if err != nil {
++		sp = ""
++	}
++
++	results, err := provisionInitAssets(initPaths{Root: ".", DocsDir: opts.DocsDir, GlobalModelsEnv: gp, GlobalSecretsEnv: sp},
+ 		embeddedAgentsFS, embeddedModelsEnv, opts.Force)
+ 	if err != nil {
+ 		fatal("Erro ao provisionar o projeto: %v", err)
+@@ -135,8 +140,10 @@ func runInit(opts initOptions) {
+ 		}
+ 	}
+ 
+-	// models.env provisionado passa a valer para esta execução (flags explícitas prevalecem).
+-	loadEnvFile(modelsEnvPath)
++	// project.env, models.env e secrets.env provisionados passam a valer para esta execução (flags explícitas prevalecem).
++	if err := loadEnvLayers(envLayerPaths); err != nil {
++		fmt.Printf("[AVISO] %v\n", err)
++	}
+ 	agents := make([]AgentBinding, len(opts.Agents))
+ 	for i, a := range opts.Agents {
+ 		agents[i] = refreshBindingFromEnv(a, os.Getenv, opts.SetFlags)
+diff --git a/init_test.go b/init_test.go
+index e7585c9..92be8dd 100644
+--- a/init_test.go
++++ b/init_test.go
+@@ -362,9 +362,11 @@ func TestSaveGlobalModelsEnvEmptyGlobalErrors(t *testing.T) {
+ 	}
+ }
+ 
+-// IP-H7: entradas obrigatórias do .gitignore.
++// IP-H7: entradas obrigatórias do .gitignore — APENAS state/, telemetry/ e secrets.env.
++// [REGRESSÃO JUSTIFICADA] project.env saiu da lista: passa a ser versionado pela equipe
++// (docs/references/team-scale-and-regression.md §2). As chaves migram para secrets.env.
+ func TestGitignoreEntriesContract(t *testing.T) {
+-	want := []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/project.env"}
++	want := []string{".makercycle/state/", ".makercycle/telemetry/", ".makercycle/config/secrets.env"}
+ 	if strings.Join(gitignoreEntries, "|") != strings.Join(want, "|") {
+ 		t.Errorf("gitignoreEntries = %v; want %v", gitignoreEntries, want)
+ 	}
+@@ -380,7 +382,7 @@ func TestEnsureGitignoreEntriesCreatesFile(t *testing.T) {
+ 	if strings.Join(added, "|") != strings.Join(gitignoreEntries, "|") {
+ 		t.Errorf("added = %v; want %v", added, gitignoreEntries)
+ 	}
+-	want := gitignoreHeader + "\n.makercycle/state/\n.makercycle/telemetry/\n.makercycle/config/project.env\n"
++	want := gitignoreHeader + "\n.makercycle/state/\n.makercycle/telemetry/\n.makercycle/config/secrets.env\n"
+ 	if got := readString(t, path); got != want {
+ 		t.Errorf(".gitignore =\n%q\nwant\n%q", got, want)
+ 	}
+@@ -396,10 +398,10 @@ func TestEnsureGitignoreEntriesAppendsMissingOnly(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+-	if want := []string{".makercycle/telemetry/", ".makercycle/config/project.env"}; strings.Join(added, "|") != strings.Join(want, "|") {
++	if want := []string{".makercycle/telemetry/", ".makercycle/config/secrets.env"}; strings.Join(added, "|") != strings.Join(want, "|") {
+ 		t.Errorf("added = %v; want %v", added, want)
+ 	}
+-	want := "node_modules/\n.makercycle/state/\n\n" + gitignoreHeader + "\n.makercycle/telemetry/\n.makercycle/config/project.env\n"
++	want := "node_modules/\n.makercycle/state/\n\n" + gitignoreHeader + "\n.makercycle/telemetry/\n.makercycle/config/secrets.env\n"
+ 	if got := readString(t, path); got != want {
+ 		t.Errorf(".gitignore =\n%q\nwant\n%q", got, want)
+ 	}
+@@ -427,7 +429,7 @@ func TestEnsureGitignoreEntriesIdempotent(t *testing.T) {
+ // IP-E9: variações equivalentes (barra inicial, sem barra final, espaços, CRLF) contam como presentes.
+ func TestEnsureGitignoreEntriesRecognizesEquivalents(t *testing.T) {
+ 	path := filepath.Join(t.TempDir(), ".gitignore")
+-	content := "/.makercycle/state/\r\n  .makercycle/telemetry  \r\n/.makercycle/config/project.env\r\n"
++	content := "/.makercycle/state/\r\n  .makercycle/telemetry  \r\n/.makercycle/config/secrets.env\r\n"
+ 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+ 		t.Fatal(err)
+ 	}
+diff --git a/makercycle.go b/makercycle.go
+index b3eb9a3..aba005c 100644
+--- a/makercycle.go
++++ b/makercycle.go
+@@ -64,13 +64,19 @@ func (t TokenStats) Format() string {
+ func main() {
+ 	runID := newRunID()
+ 
+-	loadEnvFile(modelsEnvPath)
+-	loadEnvFile(".makercycle/config/project.env")
++	if err := loadEnvLayers(envLayerPaths); err != nil {
++		fmt.Printf("[AVISO] %v\n", err)
++	}
+ 	if b, err := os.ReadFile(modelsEnvPath); err == nil {
+ 		if msg := modelsEnvKeyWarning(apiKeysInModelsEnv(string(b))); msg != "" {
+ 			fmt.Fprintln(yellowWriter(os.Stdout), msg)
+ 		}
+ 	}
++	if b, err := os.ReadFile(projectEnvPath); err == nil {
++		if msg := projectEnvKeyWarning(apiKeysInModelsEnv(string(b))); msg != "" {
++			fmt.Fprintln(yellowWriter(os.Stdout), msg)
++		}
++	}
+ 
+ 	setupMode := flag.Bool("setup", false, "Etapa 0 (Scan): analisa projeto existente e mapeia documentação")
+ 	taskFlag := flag.String("task", "", "Descrição da nova demanda (salva automaticamente em /docs/demands/)")
