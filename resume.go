@@ -31,6 +31,7 @@ type ResumeState struct {
 	Demand  string
 	Stack   string
 	Attempt int
+	Manual  bool
 }
 
 // writeResumeState valida e salva o estado de retomada em RESUME.env.
@@ -54,6 +55,7 @@ func writeResumeState(path string, st ResumeState) error {
 		"MC_RESUME_DEMAND":  st.Demand,
 		"MC_RESUME_STACK":   st.Stack,
 		"MC_RESUME_ATTEMPT": strconv.Itoa(st.Attempt),
+		"MC_RESUME_MANUAL":  strconv.FormatBool(st.Manual),
 	}
 	return writeProjectEnv(path, updates)
 }
@@ -87,11 +89,21 @@ func loadResumeState(path string) (ResumeState, error) {
 		attempt = att
 	}
 
+	manual := false
+	if rawManual, hasManual := env["MC_RESUME_MANUAL"]; hasManual && strings.TrimSpace(rawManual) != "" {
+		m, err := strconv.ParseBool(strings.TrimSpace(rawManual))
+		if err != nil {
+			return ResumeState{}, fmt.Errorf("MC_RESUME_MANUAL inválido em %s: %q", path, rawManual)
+		}
+		manual = m
+	}
+
 	return ResumeState{
 		Stage:   stage,
 		Demand:  env["MC_RESUME_DEMAND"],
 		Stack:   env["MC_RESUME_STACK"],
 		Attempt: attempt,
+		Manual:  manual,
 	}, nil
 }
 

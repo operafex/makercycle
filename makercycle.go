@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -93,6 +94,7 @@ func main() {
 	docsDirFlag := flag.String("docs-dir", getEnv("MC_DOCS_DIR", getEnv("MC_DEFAULT_DOCS_DIR", "docs")), "Diretório de documentação")
 	var refFlags stringList
 	flag.Var(&refFlags, "ref", "Arquivo de referência para enriquecer a demanda (repetível; caminho direto ou nome dentro de <DOCS_DIR>/references/)")
+	manualFlag := flag.Bool("manual", false, "Pausa ao fim de cada etapa para revisão humana: [Enter]/c continua, r refaz com feedback, s salva checkpoint, q aborta")
 	jsonMetrics := flag.Bool("json-metrics", true, "Extrai contagem exata de tokens via --output-format json quando suportado")
 
 	// Bindings desacoplados: troque via .makercycle/config/models.env ou flags CLI
@@ -128,6 +130,7 @@ func main() {
 	uiSkill := flag.String("ui-skill", uiSkillFromEnv(os.Getenv), "Skill de UI anexada ao MAKER/GATEKEEPER quando o PLAN.md marca UI_SKILL: REQUIRED (MC_UI_SKILL)")
 	noUI := flag.Bool("no-ui", false, "Desliga a injeção da skill de UI nesta execução, ignorando o UI_SKILL do PLAN.md")
 
+	os.Args = normalizeManualArgs(os.Args)
 	flag.Parse()
 
 	if *versionFlag {
@@ -210,8 +213,12 @@ func main() {
 	// =========================================================================
 	// ETAPA 0 — SCAN (-setup): ANÁLISE DE PROJETO EXISTENTE
 	// =========================================================================
+	manual := *manualFlag
 	if *setupMode {
-		runProjectSetup(reader, scout, *docsDirFlag, *jsonMetrics)
+		if manual {
+			defaultPromptTimeout = manualDatabasePromptTimeout
+		}
+		runProjectSetup(reader, scout, *docsDirFlag, *jsonMetrics, manual)
 		finish(0)
 		return
 	}
@@ -248,6 +255,7 @@ func main() {
 			fatal("%v", err)
 		}
 		stack = resStack
+		manual = resolveManualMode(st.Manual, *manualFlag, setFlags["manual"])
 	} else {
 		var stageErr error
 		startStage, stageErr = resolveStage(*stageFlag)
@@ -269,6 +277,11 @@ func main() {
 		}
 		stack = s
 	}
+
+	if manual {
+		defaultPromptTimeout = manualDatabasePromptTimeout
+	}
+	reviewer := manualReviewer{Enabled: manual, In: reader, Out: os.Stdout, DocsDir: docsDir}
 
 	if demandFile != "" {
 		t, err := demandTitle(demandFile)
@@ -334,8 +347,13 @@ func main() {
 
 	preflightSkills(stageSkills(startStage, planner, critic, auditor))
 
+	modeNote := ""
+	if manual {
+		modeNote = " | Modo: manual"
+		logEvent("Modo -manual ativo: pausa ao fim de cada etapa")
+	}
 	printBanner("MAKERCYCLE INICIADO",
-		fmt.Sprintf("Stack: %s | Docs: /%s | Max Tentativas: %d\nBindings: %s", stack.Name, docsDir, *maxAttempts, modelsSummary))
+		fmt.Sprintf("Stack: %s | Docs: /%s | Max Tentativas: %d%s\nBindings: %s", stack.Name, docsDir, *maxAttempts, modeNote, modelsSummary))
 
 	handleQuotaPause := func(stage int, stageLabel string, res AgentResult, attempt int) {
 		st := ResumeState{
@@ -343,6 +361,7 @@ func main() {
 			Demand:  demandFile,
 			Stack:   stack.Name,
 			Attempt: attempt,
+			Manual:  manual,
 		}
 		if err := writeResumeState(resumeEnvPath, st); err != nil {
 			fatal("Erro ao salvar estado de retomada: %v", err)
@@ -357,37 +376,102 @@ func main() {
 		finish(exitQuota)
 	}
 
+	// Encerramentos do modo -manual: [s] salva checkpoint (sai com 0) e [q] aborta (sai com 6).
+	handleManualSave := func(stageCode string, attempt int, specApproved bool) {
+		next, err := manualResumeStage(stageCode, specApproved)
+		if err != nil {
+			fatal("%v", err)
+		}
+		st := ResumeState{Stage: next, Demand: demandFile, Stack: stack.Name, Attempt: attempt, Manual: true}
+		if err := writeResumeState(resumeEnvPath, st); err != nil {
+			fatal("Erro ao salvar estado de retomada: %v", err)
+		}
+		msg := fmt.Sprintf("[MANUAL] Checkpoint salvo em %s (retomada na Etapa %d). Continue com: makercycle -resume", resumeEnvPath, next)
+		fmt.Println(msg)
+		logEvent("%s", msg)
+		recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, manualSaveStatus, "Checkpoint salvo no modo -manual após "+stageCode)
+		finish(0)
+	}
+	handleManualAbort := func(stageCode string, attempt int) {
+		updateDemandStatus(demandFile, manualAbortStatus, attempt, totalTokens)
+		recordRunTelemetry(runID, stack.Name, demandFile, *maxAttempts, attempt, totalTokens, manualAbortStatus, "Execução abortada pelo usuário no modo -manual após "+stageCode)
+		printBanner("MAKERCYCLE ABORTADO — MODO MANUAL",
+			fmt.Sprintf("Execução abortada pelo usuário após a etapa %s | Gasto Total: %s", stageCode, totalTokens.Format()))
+		finish(exitManualAbort)
+	}
+	// pending = tokens ainda não somados a totalTokens (só não-zero nas E1/E2, cujo total é somado pelo runSpecLoop).
+	handleManualAction := func(stageCode, action string, err error, attempt int, specApproved bool, pending TokenStats) {
+		if err != nil {
+			fatal("%v", err)
+		}
+		switch action {
+		case manualActionSave:
+			totalTokens.Add(pending)
+			handleManualSave(stageCode, attempt, specApproved)
+		case manualActionAbort:
+			totalTokens.Add(pending)
+			handleManualAbort(stageCode, attempt)
+		}
+	}
+
 	// =========================================================================
 	// ETAPAS 1 e 2 — PLAN (PLANNER) <-> CHALLENGE (CRITIC): loop autônomo até MC_MAX_ATTEMPTS
 	// =========================================================================
 	if startStage <= 2 {
 		criticAttempt := 1
+		var specTokens TokenStats // tokens de todas as execuções das E1/E2 (inclui os [r] do modo -manual)
 		deps := specLoopDeps{
 			RunPlanner: func(a int) AgentResult {
-				printBanner(fmt.Sprintf("ETAPA 1: PLAN — PLANNER (Tentativa %d/%d)", a, *maxAttempts),
-					fmt.Sprintf("Skill: %s | Modelo: %s (%s)", planner.Skill, planner.Model, planner.Bin))
-				prompt := withDatabaseContext(buildPlannerPrompt(planner.Skill, docsDir, stack.Name, task, demandFile, refs, a), database)
-				start := time.Now()
-				res := runAgentStep(planner, prompt, *jsonMetrics, authMode, omni)
-				recordEventTelemetry(runID, "S1", planner.Alias, res.Model, a, res.Stats, time.Since(start).Seconds())
-				if !res.Quota && res.Err == nil {
-					reportTokens(planner, res.Stats)
-					tracker.Finish("S1", time.Since(start), res.Stats)
-				}
+				var res AgentResult
+				var acc TokenStats
+				action, err := reviewer.Review("E1", func(fb string) bool {
+					printBanner(fmt.Sprintf("ETAPA 1: PLAN — PLANNER (Tentativa %d/%d)", a, *maxAttempts),
+						fmt.Sprintf("Skill: %s | Modelo: %s (%s)", planner.Skill, planner.Model, planner.Bin))
+					prompt := appendManualFeedback(withDatabaseContext(buildPlannerPrompt(planner.Skill, docsDir, stack.Name, task, demandFile, refs, a), database), fb)
+					start := time.Now()
+					res = runAgentStep(planner, prompt, *jsonMetrics, authMode, omni)
+					recordEventTelemetry(runID, "S1", planner.Alias, res.Model, a, res.Stats, time.Since(start).Seconds())
+					acc.Add(res.Stats)
+					specTokens.Add(res.Stats)
+					ok := !res.Quota && res.Err == nil
+					if ok {
+						reportTokens(planner, res.Stats)
+						tracker.Finish("S1", time.Since(start), res.Stats)
+					}
+					return ok
+				})
+				res.Stats = acc
+				handleManualAction("E1", action, err, 1, false, specTokens)
 				return res
 			},
 			RunCritic: func(a int) AgentResult {
 				criticAttempt = a
-				printBanner(fmt.Sprintf("ETAPA 2: CHALLENGE — CRITIC (Tentativa %d/%d)", a, *maxAttempts),
-					fmt.Sprintf("Skill: %s | Modelo: %s (%s)", critic.Skill, critic.Model, critic.Bin))
-				prompt := buildCriticPrompt(critic.Skill, docsDir)
-				start := time.Now()
-				res := runAgentStep(critic, prompt, *jsonMetrics, authMode, omni)
-				recordEventTelemetry(runID, "S2", critic.Alias, res.Model, a, res.Stats, time.Since(start).Seconds())
-				if !res.Quota && res.Err == nil {
-					reportTokens(critic, res.Stats)
-					tracker.Finish("S2", time.Since(start), res.Stats)
+				var res AgentResult
+				var acc TokenStats
+				action, err := reviewer.Review("E2", func(fb string) bool {
+					_ = os.Remove(specReviewPath) // um [r] não pode ler o parecer da execução anterior
+					printBanner(fmt.Sprintf("ETAPA 2: CHALLENGE — CRITIC (Tentativa %d/%d)", a, *maxAttempts),
+						fmt.Sprintf("Skill: %s | Modelo: %s (%s)", critic.Skill, critic.Model, critic.Bin))
+					prompt := appendManualFeedback(buildCriticPrompt(critic.Skill, docsDir), fb)
+					start := time.Now()
+					res = runAgentStep(critic, prompt, *jsonMetrics, authMode, omni)
+					recordEventTelemetry(runID, "S2", critic.Alias, res.Model, a, res.Stats, time.Since(start).Seconds())
+					acc.Add(res.Stats)
+					specTokens.Add(res.Stats)
+					ok := !res.Quota && res.Err == nil
+					if ok {
+						reportTokens(critic, res.Stats)
+						tracker.Finish("S2", time.Since(start), res.Stats)
+					}
+					return ok
+				})
+				res.Stats = acc
+				specApproved := false
+				if action == manualActionSave {
+					review, _ := readFile(specReviewPath)
+					specApproved = strings.Contains(review, specApprovedMarker)
 				}
+				handleManualAction("E2", action, err, 1, specApproved, specTokens)
 				return res
 			},
 			ClearReview: func() { _ = os.Remove(specReviewPath) }, // evita ler um parecer de rodada anterior
@@ -437,63 +521,90 @@ func main() {
 				makerBanner = fmt.Sprintf("Skill: %s | %s", makerSkills, makerBanner)
 				logEvent("Skills da Etapa 3 (MAKER): %s", makerSkills)
 			}
-			printBanner(fmt.Sprintf("ETAPA 3: MAKE — MAKER (Tentativa %d/%d)", attempt, *maxAttempts), makerBanner)
 
-			execPrompt := withDatabaseContext(buildMakerPrompt(makerSkills, docsDir, attempt), database)
+			var res AgentResult
+			action, err := reviewer.Review("E3", func(fb string) bool {
+				printBanner(fmt.Sprintf("ETAPA 3: MAKE — MAKER (Tentativa %d/%d)", attempt, *maxAttempts), makerBanner)
+				execPrompt := appendManualFeedback(withDatabaseContext(buildMakerPrompt(makerSkills, docsDir, attempt), database), fb)
 
-			bStart := time.Now()
-			res := runAgentStep(maker, execPrompt, *jsonMetrics, authMode, omni)
-			recordEventTelemetry(runID, "S3", maker.Alias, res.Model, attempt, res.Stats, time.Since(bStart).Seconds())
-			totalTokens.Add(res.Stats)
+				bStart := time.Now()
+				res = runAgentStep(maker, execPrompt, *jsonMetrics, authMode, omni)
+				recordEventTelemetry(runID, "S3", maker.Alias, res.Model, attempt, res.Stats, time.Since(bStart).Seconds())
+				totalTokens.Add(res.Stats)
+				if res.Quota || res.Err != nil {
+					return false
+				}
+				reportTokens(maker, res.Stats)
+				tracker.Finish("S3", time.Since(bStart), res.Stats)
+				return true
+			})
 			if res.Quota {
 				handleQuotaPause(3, maker.Label+": "+maker.Stage, res, attempt)
 			}
 			if res.Err != nil {
 				fatal("Falha na Etapa 3 (MAKER): %v (verifique MC_MAKER_MODEL/MC_MAKER_BIN em .makercycle/config/models.env)", res.Err)
 			}
-			reportTokens(maker, res.Stats)
-			tracker.Finish("S3", time.Since(bStart), res.Stats)
+			handleManualAction("E3", action, err, attempt, false, TokenStats{})
 		}
 
 		// ETAPA 4A & 4B — VERIFY
 		if shouldRunStage(4, startStage, attempt, firstAttempt) {
+			var verifyDur time.Duration // só o tempo de execução (a espera do revisor humano não conta)
+
 			// ETAPA 4A — VERIFY: CHECK: Verificação Determinística
-			vStart := time.Now()
-			printBanner(fmt.Sprintf("ETAPA 4A: VERIFY: CHECK (Tentativa %d/%d)", attempt, *maxAttempts),
-				fmt.Sprintf("Runner Determinístico (%s)", stack.Name))
-			checksPassed = runDeterministicChecks(stack)
+			action, err := reviewer.Review("E4A", func(string) bool {
+				vStart := time.Now()
+				printBanner(fmt.Sprintf("ETAPA 4A: VERIFY: CHECK (Tentativa %d/%d)", attempt, *maxAttempts),
+					fmt.Sprintf("Runner Determinístico (%s)", stack.Name))
+				checksPassed = runDeterministicChecks(stack)
+				verifyDur += time.Since(vStart)
+				return true
+			})
+			handleManualAction("E4A", action, err, attempt, false, TokenStats{})
+			if reviewer.Enabled {
+				checksPassed = verifyReportPassed(".makercycle/state/VERIFY_REPORT.md", checksPassed) // vale a edição manual
+			}
 
 			// ETAPA 4B — VERIFY: HARDEN: AUDITOR
-			printBanner(fmt.Sprintf("ETAPA 4B: VERIFY: HARDEN — AUDITOR (Tentativa %d/%d)", attempt, *maxAttempts),
-				fmt.Sprintf("Skill: %s | Modelo: %s", auditor.Skill, auditor.Model))
+			var res AgentResult
+			action, err = reviewer.Review("E4B", func(fb string) bool {
+				printBanner(fmt.Sprintf("ETAPA 4B: VERIFY: HARDEN — AUDITOR (Tentativa %d/%d)", attempt, *maxAttempts),
+					fmt.Sprintf("Skill: %s | Modelo: %s", auditor.Skill, auditor.Model))
 
-			secPrompt := buildAuditorPrompt(auditor.Skill)
-			secReportPath := ".makercycle/state/SECURITY_REPORT.md"
-			var secModBefore time.Time
-			if fi, statErr := os.Stat(secReportPath); statErr == nil {
-				secModBefore = fi.ModTime()
-			}
-			sStart := time.Now()
-			res := runAgentStep(auditor, secPrompt, *jsonMetrics, authMode, omni)
-			recordEventTelemetry(runID, "S4B", auditor.Alias, res.Model, attempt, res.Stats, time.Since(sStart).Seconds())
-			totalTokens.Add(res.Stats)
+				secPrompt := appendManualFeedback(buildAuditorPrompt(auditor.Skill), fb)
+				secReportPath := ".makercycle/state/SECURITY_REPORT.md"
+				var secModBefore time.Time
+				if fi, statErr := os.Stat(secReportPath); statErr == nil {
+					secModBefore = fi.ModTime()
+				}
+				sStart := time.Now()
+				res = runAgentStep(auditor, secPrompt, *jsonMetrics, authMode, omni)
+				recordEventTelemetry(runID, "S4B", auditor.Alias, res.Model, attempt, res.Stats, time.Since(sStart).Seconds())
+				totalTokens.Add(res.Stats)
+				verifyDur += time.Since(sStart)
+				if res.Quota {
+					return false
+				}
+				if res.Err != nil {
+					fmt.Printf("[AVISO] AUDITOR (AppSec) retornou erro de processo: %v\n", res.Err)
+					logEvent("AVISO: AUDITOR retornou erro de processo: %v", res.Err)
+				}
+				if secContent, readErr := readFile(secReportPath); readErr == nil {
+					logBlock(".makercycle/state/SECURITY_REPORT.md (tentativa "+strconv.Itoa(attempt)+")", secContent)
+				}
+				if fi, statErr := os.Stat(secReportPath); statErr != nil {
+					fmt.Printf("[AVISO] AUDITOR não gerou %s. A auditoria de segurança NÃO foi registrada (verifique permissões em MC_AUDITOR_ARGS).\n", secReportPath)
+				} else if !secModBefore.IsZero() && !fi.ModTime().After(secModBefore) {
+					fmt.Printf("[AVISO] AUDITOR não atualizou %s nesta tentativa; o relatório é de uma execução anterior.\n", secReportPath)
+				}
+				reportTokens(auditor, res.Stats)
+				tracker.Finish("S4B", verifyDur, res.Stats)
+				return true
+			})
 			if res.Quota {
 				handleQuotaPause(4, auditor.Label+": "+auditor.Stage, res, attempt)
 			}
-			if res.Err != nil {
-				fmt.Printf("[AVISO] AUDITOR (AppSec) retornou erro de processo: %v\n", res.Err)
-				logEvent("AVISO: AUDITOR retornou erro de processo: %v", res.Err)
-			}
-			if secContent, readErr := readFile(secReportPath); readErr == nil {
-				logBlock(".makercycle/state/SECURITY_REPORT.md (tentativa "+strconv.Itoa(attempt)+")", secContent)
-			}
-			if fi, statErr := os.Stat(secReportPath); statErr != nil {
-				fmt.Printf("[AVISO] AUDITOR não gerou %s. A auditoria de segurança NÃO foi registrada (verifique permissões em MC_AUDITOR_ARGS).\n", secReportPath)
-			} else if !secModBefore.IsZero() && !fi.ModTime().After(secModBefore) {
-				fmt.Printf("[AVISO] AUDITOR não atualizou %s nesta tentativa; o relatório é de uma execução anterior.\n", secReportPath)
-			}
-			reportTokens(auditor, res.Stats)
-			tracker.Finish("S4B", time.Since(vStart), res.Stats)
+			handleManualAction("E4B", action, err, attempt, false, TokenStats{})
 		}
 
 		// ETAPA 5 — GATE: GATEKEEPER
@@ -579,8 +690,20 @@ func main() {
 	finish(1)
 }
 
-func runProjectSetup(reader *bufio.Reader, scout AgentBinding, defaultDocs string, jsonMetrics bool) {
-	if _, err := runProjectSetupWith(reader, scout, defaultDocs, jsonMetrics, runScoutAgent, time.Now); err != nil {
+func runProjectSetup(reader *bufio.Reader, scout AgentBinding, defaultDocs string, jsonMetrics, manual bool) {
+	var err error
+	if manual {
+		runner := manualScoutRunner(manualReviewer{Enabled: true, In: reader, Out: os.Stdout}, runScoutAgentWithFeedback)
+		_, err = runProjectSetupWith(reader, scout, defaultDocs, jsonMetrics, runner, time.Now)
+	} else {
+		_, err = runProjectSetupWith(reader, scout, defaultDocs, jsonMetrics, runScoutAgent, time.Now)
+	}
+	if err != nil {
+		if errors.Is(err, errManualAborted) {
+			fmt.Println("[MANUAL] Execução abortada pelo usuário (ABORTED).")
+			finish(exitManualAbort)
+			return
+		}
 		fatal("%v", err)
 	}
 }

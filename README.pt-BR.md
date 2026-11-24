@@ -203,6 +203,36 @@ Você pode retomar execuções interrompidas ou vincular demandas existentes:
 - `-stage <1..5>`: Inicia a execução diretamente em qualquer etapa (1 a 5).
 - `-demand <arquivo.md>`: Vincula uma demanda existente em `<docsDir>/demands/` (ex.: `-demand 2026-11-17-feature.md`) sem gerar duplicações no índice.
 
+### Modo de revisão manual (`-manual`)
+
+Com `-manual`, o MakerCycle pausa ao fim de cada etapa para você revisar o artefato, editá-lo e decidir o próximo passo:
+
+```bash
+makercycle -task "Adicionar endpoint X" -manual
+makercycle -task -manual "Adicionar endpoint X"   # a flag pode vir em qualquer posição
+makercycle -resume -manual
+```
+
+Etapas que pausam e o artefato a revisar:
+
+| Etapa | Artefato |
+| :--- | :--- |
+| E0 SCAN (`-setup`) | `<docsDir>/PROJECT_CONTEXT.md` |
+| E1 PLAN | `.makercycle/state/PLAN.md` |
+| E2 CHALLENGE | `.makercycle/state/SPEC_REVIEW.md` |
+| E3 MAKE | `git diff` |
+| E4A VERIFY: CHECK | `.makercycle/state/VERIFY_REPORT.md` |
+| E4B VERIFY: HARDEN | `.makercycle/state/SECURITY_REPORT.md` |
+
+Teclas em cada pausa:
+
+- `[Enter]` / `[c]`: continua para a próxima etapa (artefatos editados são recarregados).
+- `[r]`: refaz a etapa, com feedback opcional de uma linha anexado ao prompt do agente (a E4A não usa LLM: apenas reexecuta os checks).
+- `[s]`: salva o checkpoint e sai com código `0`. O `RESUME.env` guarda o modo manual (status `MANUAL_PAUSED`); continue com `makercycle -resume`. Use `-resume -manual=false` para desligar o modo na retomada.
+- `[q]`: aborta. A execução é registrada como `ABORTED` em `runs.csv`/`TELEMETRY.md` e na demanda, e o código de saída é `6`.
+
+O `-manual` exige um terminal interativo: com a entrada padrão fechada (pipe, `< /dev/null`), a primeira pausa falha com um erro claro. Etapa que falha (cota ou erro) não pausa.
+
 ### 4. Testar combinações de modelos
 
 Edite `.makercycle/config/models.env` ou sobrescreva via variáveis de ambiente (veja detalhes completos na seção [Personalização de Modelos](#personalização-de-modelos)):
@@ -326,6 +356,7 @@ As Etapas 1 e 2 rodam como um loop autônomo (veja [Loop autônomo de especifica
 | `3` | `AMEND_TEST` — teste da Etapa 1 precisa de correção |
 | `4` | `ESCALATE_PLANNER` |
 | `5` | Limite de cota ou tokens atingido (estado gravado em `RESUME.env`, retomável com `-resume`) |
+| `6` | Execução abortada pelo usuário com `[q]` no modo `-manual` (`ABORTED`) |
 
 ## Testes
 

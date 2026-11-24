@@ -203,6 +203,36 @@ You can resume interrupted runs or connect existing demands:
 - `-stage <1..5>`: Starts execution at any stage (1 to 5).
 - `-demand <file.md>`: Connects an existing demand from `<docsDir>/demands/` (e.g. `-demand 2026-11-17-feature.md`) without creating a duplicate record.
 
+### Manual review mode (`-manual`)
+
+With `-manual`, MakerCycle pauses at the end of every stage so you can review the artifact, edit it, and decide what happens next:
+
+```bash
+makercycle -task "Add endpoint X" -manual
+makercycle -task -manual "Add endpoint X"   # the flag may appear anywhere
+makercycle -resume -manual
+```
+
+Stages that pause and the artifact to review:
+
+| Stage | Artifact |
+| :--- | :--- |
+| E0 SCAN (`-setup`) | `<docsDir>/PROJECT_CONTEXT.md` |
+| E1 PLAN | `.makercycle/state/PLAN.md` |
+| E2 CHALLENGE | `.makercycle/state/SPEC_REVIEW.md` |
+| E3 MAKE | `git diff` |
+| E4A VERIFY: CHECK | `.makercycle/state/VERIFY_REPORT.md` |
+| E4B VERIFY: HARDEN | `.makercycle/state/SECURITY_REPORT.md` |
+
+Keys at each pause:
+
+- `[Enter]` / `[c]`: continue to the next stage (edited artifacts are reloaded).
+- `[r]`: redo the stage, with optional one-line feedback appended to the agent prompt (E4A has no LLM, so it only re-runs the checks).
+- `[s]`: save a checkpoint and exit with code `0`. `RESUME.env` stores the manual mode (status `MANUAL_PAUSED`); continue with `makercycle -resume`. Use `-resume -manual=false` to turn the mode off on resume.
+- `[q]`: abort. The run is recorded as `ABORTED` in `runs.csv`/`TELEMETRY.md` and in the demand, and the exit code is `6`.
+
+`-manual` requires an interactive terminal: if standard input is closed (pipe, `< /dev/null`), the first pause fails with a clear error. A stage that fails (quota or error) does not pause.
+
 ### 4. Try different model combinations
 
 Edit `.makercycle/config/models.env` or override with environment variables (see full details in the [Model Customization](#model-customization) section):
@@ -326,6 +356,7 @@ Stages 1 and 2 run as an autonomous loop (see [Autonomous specification loop](#a
 | `3` | `AMEND_TEST` — a Stage 1 test needs fixing |
 | `4` | `ESCALATE_PLANNER` |
 | `5` | Quota or token limit reached (state saved in `RESUME.env`, resumable with `-resume`) |
+| `6` | Run aborted by the user with `[q]` in `-manual` mode (`ABORTED`) |
 
 ## Tests
 

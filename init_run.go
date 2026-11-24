@@ -61,8 +61,13 @@ func buildScoutPromptFor(existingDocs, docsDir, detectedName, database string, g
 
 // runScoutAgent executa o SCOUT e valida que <docs>/PROJECT_CONTEXT.md foi gerado.
 func runScoutAgent(scout AgentBinding, docsDir, existingDocs, detectedName string, jsonMetrics bool) (TokenStats, error) {
+	return runScoutAgentWithFeedback(scout, docsDir, existingDocs, detectedName, jsonMetrics, "")
+}
+
+// runScoutAgentWithFeedback é o runScoutAgent com o feedback do revisor humano (modo -manual) anexado ao prompt.
+func runScoutAgentWithFeedback(scout AgentBinding, docsDir, existingDocs, detectedName string, jsonMetrics bool, feedback string) (TokenStats, error) {
 	start := time.Now()
-	prompt := buildScoutPromptFor(existingDocs, docsDir, detectedName, currentDatabase(projectEnvPath, os.Getenv), isGreenfieldProject("."))
+	prompt := appendManualFeedback(buildScoutPromptFor(existingDocs, docsDir, detectedName, currentDatabase(projectEnvPath, os.Getenv), isGreenfieldProject(".")), feedback)
 	stats, err := runAgent(scout, prompt, jsonMetrics)
 	if err != nil {
 		return stats, fmt.Errorf("Falha na Etapa 0 (SCOUT): %w", err)

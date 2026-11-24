@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
@@ -83,7 +84,9 @@ func (s *setupTelemetry) Finish(stack string, setupErr error) string {
 		return s.status
 	}
 	status := setupRunStatusOK
-	if setupErr != nil {
+	if errors.Is(setupErr, errManualAborted) {
+		status = manualAbortStatus
+	} else if setupErr != nil {
 		status = setupRunStatusError
 	}
 	note := setupRunNote(s.scoutStatus, s.now().Sub(s.start).Seconds(), setupErr)
